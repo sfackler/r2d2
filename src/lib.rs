@@ -61,14 +61,8 @@ pub struct Pool<C, M> {
     internals: Mutex<PoolInternals<C>>,
 }
 
-impl<C: Send, E, M: PoolManager<C, E>+Default> Pool<C, M> {
-    pub fn new(config: Config) -> Result<Pool<C, M>, NewPoolError<E>> {
-        Pool::with_manager(config, Default::default())
-    }
-}
-
 impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
-    pub fn with_manager(config: Config, manager: M) -> Result<Pool<C, M>, NewPoolError<E>> {
+    pub fn new(config: Config, manager: M) -> Result<Pool<C, M>, NewPoolError<E>> {
         match config.validate() {
             Ok(()) => {}
             Err(err) => return Err(InvalidConfig(err))
