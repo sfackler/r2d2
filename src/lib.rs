@@ -2,6 +2,7 @@
 
 use std::default::Default;
 use std::sync::Mutex;
+use std::fmt;
 
 pub trait PoolManager<C, E> {
     fn connect(&self) -> Result<C, E>;
@@ -19,6 +20,37 @@ impl Default for Config {
     }
 }
 
+impl Config {
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        Ok(())
+    }
+}
+
+#[deriving(PartialEq, Eq)]
+pub enum ConfigError {
+}
+
+impl fmt::Show for ConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        Ok(())
+    }
+}
+
+#[deriving(PartialEq, Eq)]
+pub enum NewPoolError<E> {
+    InvalidConfig(ConfigError),
+    ConnectionError(E),
+}
+
+impl<E: fmt::Show> fmt::Show for NewPoolError<E> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            InvalidConfig(ref error) => write!(f, "Invalid Config: {}", error),
+            ConnectionError(ref error) => write!(f, "Unable to create connections: {}", error),
+        }
+    }
+}
+
 struct PoolInternals<C> {
     conns: Vec<C>,
 }
@@ -30,23 +62,56 @@ pub struct Pool<C, M> {
 }
 
 impl<C: Send, E, M: PoolManager<C, E>+Default> Pool<C, M> {
-    pub fn new(config: Config) -> Pool<C, M> {
+    pub fn new(config: Config) -> Result<Pool<C, M>, NewPoolError<E>> {
         Pool::with_manager(config, Default::default())
     }
 }
 
 impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
-    pub fn with_manager(config: Config, manager: M) -> Pool<C, M> {
-        Pool {
+    pub fn with_manager(config: Config, manager: M) -> Result<Pool<C, M>, NewPoolError<E>> {
+        match config.validate() {
+            Ok(()) => {}
+            Err(err) => return Err(InvalidConfig(err))
+        }
+
+        let mut internals = PoolInternals {
+            conns: vec![],
+        };
+
+        for _ in range(0, config.initial_size) {
+            match manager.connect() {
+                Ok(conn) => internals.conns.push(conn),
+                Err(err) => return Err(ConnectionError(err)),
+            }
+        }
+
+        Ok(Pool {
             config: config,
             manager: manager,
-            internals: Mutex::new(PoolInternals {
-                conns: vec![]
-            }),
+            internals: Mutex::new(internals),
+        })
+    }
+
+    pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, C, M>, E> {
+        let mut internals = self.internals.lock();
+
+        loop {
+            match internals.conns.pop() {
+                Some(conn) => {
+                    return Ok(PooledConnection {
+                        pool: self,
+                        conn: Some(conn)
+                    })
+                }
+                None => internals.cond.wait(),
+            }
         }
     }
 
     fn put_back(&self, conn: C) {
+        let mut internals = self.internals.lock();
+        internals.conns.push(conn);
+        internals.cond.signal();
     }
 }
 
