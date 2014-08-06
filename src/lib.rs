@@ -45,7 +45,7 @@ pub enum NewPoolError<E> {
 impl<E: fmt::Show> fmt::Show for NewPoolError<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            InvalidConfig(ref error) => write!(f, "Invalid Config: {}", error),
+            InvalidConfig(ref error) => write!(f, "Invalid config: {}", error),
             ConnectionError(ref error) => write!(f, "Unable to create connections: {}", error),
         }
     }
