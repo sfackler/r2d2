@@ -114,10 +114,18 @@ pub struct PooledConnection<'a, C, M> {
     conn: Option<C>,
 }
 
-#[unsafe_destructor]
-impl<'a, C: Send, E, M: PoolManager<C, E>> Drop for PooledConnection<'a, C, M> {
-    fn drop(&mut self) {
+impl<'a, C: Send, E, M: PoolManager<C, E>> PooledConnection<'a, C, M> {
+    pub fn replace(mut self) {
         self.pool.put_back(self.conn.take_unwrap())
+    }
+}
+
+#[unsafe_destructor]
+impl<'a, C, M> Drop for PooledConnection<'a, C, M> {
+    fn drop(&mut self) {
+        if self.conn.is_some() {
+            fail!("You must call conn.return()");
+        }
     }
 }
 

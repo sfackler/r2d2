@@ -52,6 +52,13 @@ fn test_initial_size_err() {
 }
 
 #[test]
+#[should_fail]
+fn test_missing_replace() {
+    let pool = r2d2::Pool::new(Default::default(), OkManager).unwrap();
+    pool.get().unwrap();
+}
+
+#[test]
 fn test_acquire_release() {
     let config = r2d2::Config {
         initial_size: 2,
@@ -60,7 +67,9 @@ fn test_acquire_release() {
     let pool = r2d2::Pool::new(config, OkManager).unwrap();
 
     let conn1 = pool.get().unwrap();
-    let _conn2 = pool.get().unwrap();
-    drop(conn1);
-    let _conn3 = pool.get().unwrap();
+    let conn2 = pool.get().unwrap();
+    conn1.replace();
+    let conn3 = pool.get().unwrap();
+    conn2.replace();
+    conn3.replace();
 }
