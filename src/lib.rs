@@ -130,7 +130,7 @@ impl<'a, C, M> Drop for PooledConnection<'a, C, M> {
 }
 
 impl<'a, C, M> Deref<C> for PooledConnection<'a, C, M> {
-    fn deref<'b>(&'b self) -> &'b C {
+    fn deref(&self) -> &C {
         self.conn.get_ref()
     }
 }
