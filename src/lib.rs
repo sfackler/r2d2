@@ -10,35 +10,41 @@ pub trait PoolManager<C, E> {
 
 pub struct Config {
     pub initial_size: uint,
+    pub max_size: uint,
+    pub acquire_increment: uint,
 }
 
 impl Default for Config {
     fn default() -> Config {
         Config {
             initial_size: 3,
+            max_size: 15,
+            acquire_increment: 3,
         }
     }
 }
 
 impl Config {
-    pub fn validate(&self) -> Result<(), ConfigError> {
-        Ok(())
-    }
-}
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.max_size == 0 {
+            return Err("max_size must be positive");
+        }
 
-#[deriving(PartialEq, Eq)]
-pub enum ConfigError {
-}
+        if self.initial_size > self.max_size {
+            return Err("initial_size cannot be greater than max_size");
+        }
 
-impl fmt::Show for ConfigError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.acquire_increment == 0 {
+            return Err("acquire_increment must be positive");
+        }
+
         Ok(())
     }
 }
 
 #[deriving(PartialEq, Eq)]
 pub enum NewPoolError<E> {
-    InvalidConfig(ConfigError),
+    InvalidConfig(&'static str),
     ConnectionError(E),
 }
 
@@ -53,6 +59,7 @@ impl<E: fmt::Show> fmt::Show for NewPoolError<E> {
 
 struct PoolInternals<C> {
     conns: Vec<C>,
+    conn_count: uint,
 }
 
 pub struct Pool<C, M> {
@@ -70,6 +77,7 @@ impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
 
         let mut internals = PoolInternals {
             conns: vec![],
+            conn_count: config.initial_size,
         };
 
         for _ in range(0, config.initial_size) {

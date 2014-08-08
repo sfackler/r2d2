@@ -3,6 +3,8 @@ extern crate r2d2;
 use std::cell::Cell;
 use std::default::Default;
 
+mod config;
+
 #[deriving(Show, PartialEq)]
 struct FakeConnection;
 
