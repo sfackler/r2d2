@@ -1,17 +1,54 @@
+//! A library providing a generic connection pool.
 #![feature(unsafe_destructor)]
+#![warn(missing_doc)]
 
 use std::default::Default;
 use std::sync::Mutex;
 use std::fmt;
 
+/// A trait which provides database-specific functionality.
 pub trait PoolManager<C, E> {
+    /// Attempts to create a new connection.
     fn connect(&self) -> Result<C, E>;
+
+    /// Determines if the connection is still connected to the database.
+    ///
+    /// A standard implementation would check if a simple query like `SELECT 1`
+    /// succeeds.
+    fn is_valid(&self, conn: &C) -> bool;
 }
 
+/// A struct specifying the runtime configuration of a pool.
+///
+/// `Config` implements `Default`, which provides a set of reasonable default
+/// values.
 pub struct Config {
+    /// The number of connections that will be made during pool creation.
+    ///
+    /// Must be no greater than `max_size`.
+    ///
+    /// Defaults to 3.
     pub initial_size: uint,
+    /// The maximum number of connections that the pool will maintain.
+    ///
+    /// Must be positive and no less than `initial_size`.
+    ///
+    /// Defaults to 15.
     pub max_size: uint,
+    /// The number of connections that will be created at once when the pool is
+    /// exhausted.
+    ///
+    /// Must be positive.
+    ///
+    /// Defaults to 3.
     pub acquire_increment: uint,
+    /// The number of tasks that the pool will use for asynchronous operations
+    /// such as connection creation and health checks.
+    ///
+    /// Must be positive.
+    ///
+    /// Defaults to 3.
+    pub helper_tasks: uint,
 }
 
 impl Default for Config {
@@ -20,11 +57,13 @@ impl Default for Config {
             initial_size: 3,
             max_size: 15,
             acquire_increment: 3,
+            helper_tasks: 3,
         }
     }
 }
 
 impl Config {
+    /// Determines if the configuration is valid
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.max_size == 0 {
             return Err("max_size must be positive");
@@ -38,13 +77,20 @@ impl Config {
             return Err("acquire_increment must be positive");
         }
 
+        if self.helper_tasks == 0 {
+            return Err("helper_tasks must be positive");
+        }
+
         Ok(())
     }
 }
 
+/// An error type returned if pool creation fails.
 #[deriving(PartialEq, Eq)]
 pub enum NewPoolError<E> {
+    /// The provided pool configuration was invalid.
     InvalidConfig(&'static str),
+    /// The manager returned an error when creating a connection.
     ConnectionError(E),
 }
 
@@ -62,6 +108,7 @@ struct PoolInternals<C> {
     conn_count: uint,
 }
 
+/// A generic connection pool.
 pub struct Pool<C, M> {
     config: Config,
     manager: M,
@@ -69,6 +116,10 @@ pub struct Pool<C, M> {
 }
 
 impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
+    /// Creates a new connection pool.
+    ///
+    /// `Config::initial_size` connections will be created synchronously before
+    /// this method returns.
     pub fn new(config: Config, manager: M) -> Result<Pool<C, M>, NewPoolError<E>> {
         match config.validate() {
             Ok(()) => {}
@@ -94,6 +145,7 @@ impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
         })
     }
 
+    /// Retrieves a connection from the pool.
     pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, C, M>, E> {
         let mut internals = self.internals.lock();
 
@@ -117,12 +169,24 @@ impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
     }
 }
 
+/// A smart pointer wrapping an underlying connection.
+///
+/// ## Note
+///
+/// Due to Rust bug [#15905](https://github.com/rust-lang/rust/issues/15905),
+/// the connection cannot be automatically returned to its pool when the
+/// `PooledConnection` drops out of scope. The `replace` method must be called,
+/// or the `PooledConnection`'s destructor `fail!()`.
 pub struct PooledConnection<'a, C, M> {
     pool: &'a Pool<C, M>,
     conn: Option<C>,
 }
 
 impl<'a, C: Send, E, M: PoolManager<C, E>> PooledConnection<'a, C, M> {
+    /// Consumes the `PooledConnection`, returning the connection to its pool.
+    ///
+    /// This must be called before the `PooledConnection` drops out of scope or
+    /// its destructor will `fail!()`.
     pub fn replace(mut self) {
         self.pool.put_back(self.conn.take_unwrap())
     }
