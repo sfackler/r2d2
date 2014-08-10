@@ -118,9 +118,6 @@ pub struct Pool<C, M> {
 
 impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
     /// Creates a new connection pool.
-    ///
-    /// `Config::initial_size` connections will be created synchronously before
-    /// this method returns.
     pub fn new(config: Config, manager: M) -> Result<Pool<C, M>, NewPoolError<E>> {
         match config.validate() {
             Ok(()) => {}
@@ -197,7 +194,7 @@ impl<'a, C: Send, E, M: PoolManager<C, E>> PooledConnection<'a, C, M> {
 impl<'a, C, M> Drop for PooledConnection<'a, C, M> {
     fn drop(&mut self) {
         if self.conn.is_some() {
-            fail!("You must call conn.return()");
+            fail!("You must call conn.replace()");
         }
     }
 }
