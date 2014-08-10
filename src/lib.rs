@@ -110,7 +110,7 @@ impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
 /// Due to Rust bug [#15905](https://github.com/rust-lang/rust/issues/15905),
 /// the connection cannot be automatically returned to its pool when the
 /// `PooledConnection` drops out of scope. The `replace` method must be called,
-/// or the `PooledConnection`'s destructor `fail!()`.
+/// or the `PooledConnection`'s destructor will `fail!()`.
 pub struct PooledConnection<'a, C, M> {
     pool: &'a Pool<C, M>,
     conn: Option<C>,
