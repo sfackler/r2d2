@@ -3,7 +3,7 @@
 #![warn(missing_doc)]
 #![doc(html_root_url="http://www.rust-ci.org/sfackler/r2d2/doc")]
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::fmt;
 
 pub use config::Config;
@@ -11,7 +11,7 @@ pub use config::Config;
 mod config;
 
 /// A trait which provides database-specific functionality.
-pub trait PoolManager<C, E> {
+pub trait PoolManager<C, E>: Send+Sync {
     /// Attempts to create a new connection.
     fn connect(&self) -> Result<C, E>;
 
@@ -45,11 +45,23 @@ struct PoolInternals<C> {
     conn_count: uint,
 }
 
-/// A generic connection pool.
-pub struct Pool<C, M> {
+struct InnerPool<C, M> {
     config: Config,
     manager: M,
     internals: Mutex<PoolInternals<C>>,
+}
+
+/// A generic connection pool.
+pub struct Pool<C, M> {
+    inner: Arc<InnerPool<C, M>>
+}
+
+impl<C: Send, E, M: PoolManager<C, E>> Clone for Pool<C, M> {
+    fn clone(&self) -> Pool<C, M> {
+        Pool {
+            inner: self.inner.clone()
+        }
+    }
 }
 
 impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
@@ -72,16 +84,20 @@ impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
             }
         }
 
-        Ok(Pool {
+        let inner = InnerPool {
             config: config,
             manager: manager,
             internals: Mutex::new(internals),
+        };
+
+        Ok(Pool {
+            inner: Arc::new(inner),
         })
     }
 
     /// Retrieves a connection from the pool.
     pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, C, M>, E> {
-        let mut internals = self.internals.lock();
+        let mut internals = self.inner.internals.lock();
 
         loop {
             match internals.conns.pop() {
@@ -97,7 +113,7 @@ impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
     }
 
     fn put_back(&self, conn: C) {
-        let mut internals = self.internals.lock();
+        let mut internals = self.inner.internals.lock();
         internals.conns.push(conn);
         internals.cond.signal();
     }

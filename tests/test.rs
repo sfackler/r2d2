@@ -1,6 +1,6 @@
 extern crate r2d2;
 
-use std::cell::Cell;
+use std::sync::Mutex;
 use std::default::Default;
 
 mod config;
@@ -22,14 +22,14 @@ impl r2d2::PoolManager<FakeConnection, ()> for OkManager {
 }
 
 struct NthConnectFailManager {
-    n: Cell<uint>
+    n: Mutex<uint>,
 }
 
 impl r2d2::PoolManager<FakeConnection, ()> for NthConnectFailManager {
     fn connect(&self) -> Result<FakeConnection, ()> {
-        let n = self.n.get();
-        if n > 0 {
-            self.n.set(n - 1);
+        let mut n = self.n.lock();
+        if *n > 0 {
+            *n -= 1;
             Ok(FakeConnection)
         } else {
             Err(())
@@ -47,7 +47,7 @@ fn test_initial_size_ok() {
         initial_size: 5,
         ..Default::default()
     };
-    let manager = NthConnectFailManager { n: Cell::new(5) };
+    let manager = NthConnectFailManager { n: Mutex::new(5) };
     assert!(r2d2::Pool::new(config, manager).is_ok());
 }
 
@@ -57,7 +57,7 @@ fn test_initial_size_err() {
         initial_size: 5,
         ..Default::default()
     };
-    let manager = NthConnectFailManager { n: Cell::new(4) };
+    let manager = NthConnectFailManager { n: Mutex::new(4) };
     assert_eq!(r2d2::Pool::new(config, manager).err().unwrap(), r2d2::ConnectionError(()));
 }
 
