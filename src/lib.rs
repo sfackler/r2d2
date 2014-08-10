@@ -1,6 +1,7 @@
 //! A library providing a generic connection pool.
 #![feature(unsafe_destructor)]
 #![warn(missing_doc)]
+#![doc(html_root_url="http://www.rust-ci.org/sfackler/r2d2/doc")]
 
 use std::default::Default;
 use std::sync::Mutex;
