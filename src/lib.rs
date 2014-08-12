@@ -3,6 +3,7 @@
 #![warn(missing_doc)]
 #![doc(html_root_url="http://www.rust-ci.org/sfackler/r2d2/doc")]
 
+use std::collections::{Deque, RingBuf};
 use std::sync::{Arc, Mutex};
 use std::fmt;
 
@@ -41,7 +42,7 @@ impl<E: fmt::Show> fmt::Show for NewPoolError<E> {
 }
 
 struct PoolInternals<C> {
-    conns: Vec<C>,
+    conns: RingBuf<C>,
     conn_count: uint,
 }
 
@@ -56,14 +57,6 @@ pub struct Pool<C, M> {
     inner: Arc<InnerPool<C, M>>
 }
 
-impl<C: Send, E, M: PoolManager<C, E>> Clone for Pool<C, M> {
-    fn clone(&self) -> Pool<C, M> {
-        Pool {
-            inner: self.inner.clone()
-        }
-    }
-}
-
 impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
     /// Creates a new connection pool.
     pub fn new(config: Config, manager: M) -> Result<Pool<C, M>, NewPoolError<E>> {
@@ -73,7 +66,7 @@ impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
         }
 
         let mut internals = PoolInternals {
-            conns: vec![],
+            conns: RingBuf::new(),
             conn_count: config.initial_size,
         };
 
@@ -100,7 +93,7 @@ impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
         let mut internals = self.inner.internals.lock();
 
         loop {
-            match internals.conns.pop() {
+            match internals.conns.pop_front() {
                 Some(conn) => {
                     return Ok(PooledConnection {
                         pool: self,
