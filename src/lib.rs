@@ -3,6 +3,8 @@
 #![warn(missing_doc)]
 #![doc(html_root_url="http://www.rust-ci.org/sfackler/r2d2/doc")]
 
+use std::comm;
+use std::cmp;
 use std::collections::{Deque, RingBuf};
 use std::sync::{Arc, Mutex};
 use std::fmt;
@@ -41,25 +43,32 @@ impl<E: fmt::Show> fmt::Show for NewPoolError<E> {
     }
 }
 
-struct PoolInternals<C> {
-    conns: RingBuf<C>,
-    conn_count: uint,
+enum Command<C> {
+    AddConnection,
+    TestConnection(C),
 }
 
-struct InnerPool<C, M> {
+struct PoolInternals<C, E> {
+    conns: RingBuf<C>,
+    failed_conns: RingBuf<E>,
+    num_conns: uint,
+}
+
+struct InnerPool<C, E, M> {
     config: Config,
     manager: M,
-    internals: Mutex<PoolInternals<C>>,
+    internals: Mutex<PoolInternals<C, E>>,
 }
 
 /// A generic connection pool.
-pub struct Pool<C, M> {
-    inner: Arc<InnerPool<C, M>>
+pub struct Pool<C, E, M> {
+    helper_chan: Sender<Command<C>>,
+    inner: Arc<InnerPool<C, E, M>>
 }
 
-impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
+impl<C: Send, E: Send, M: PoolManager<C, E>> Pool<C, E, M> {
     /// Creates a new connection pool.
-    pub fn new(config: Config, manager: M) -> Result<Pool<C, M>, NewPoolError<E>> {
+    pub fn new(config: Config, manager: M) -> Result<Pool<C, E, M>, NewPoolError<E>> {
         match config.validate() {
             Ok(()) => {}
             Err(err) => return Err(InvalidConfig(err))
@@ -67,7 +76,8 @@ impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
 
         let mut internals = PoolInternals {
             conns: RingBuf::new(),
-            conn_count: config.initial_size,
+            failed_conns: RingBuf::new(),
+            num_conns: config.initial_size,
         };
 
         for _ in range(0, config.initial_size) {
@@ -77,19 +87,30 @@ impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
             }
         }
 
-        let inner = InnerPool {
+        let inner = Arc::new(InnerPool {
             config: config,
             manager: manager,
             internals: Mutex::new(internals),
-        };
+        });
+
+        let (sender, receiver) = comm::channel();
+        // FIXME :(
+        let receiver = Arc::new(Mutex::new(receiver));
+
+        for _ in range(0, config.helper_tasks) {
+            let inner = inner.clone();
+            let receiver = receiver.clone();
+            spawn(proc() helper_task(receiver, inner));
+        }
 
         Ok(Pool {
-            inner: Arc::new(inner),
+            helper_chan: sender,
+            inner: inner,
         })
     }
 
     /// Retrieves a connection from the pool.
-    pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, C, M>, E> {
+    pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, C, E, M>, E> {
         let mut internals = self.inner.internals.lock();
 
         loop {
@@ -100,7 +121,21 @@ impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
                         conn: Some(conn)
                     })
                 }
-                None => internals.cond.wait(),
+                None => {
+                    match internals.failed_conns.pop_front() {
+                        Some(err) => return Err(err),
+                        None => {}
+                    }
+
+                    let new_conns = cmp::min(self.inner.config.max_size - internals.num_conns,
+                                             self.inner.config.acquire_increment);
+                    for _ in range(0, new_conns) {
+                        self.helper_chan.send(AddConnection);
+                        internals.num_conns += 1;
+                    }
+
+                    internals.cond.wait();
+                }
             }
         }
     }
@@ -112,6 +147,36 @@ impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
     }
 }
 
+fn helper_task<C: Send, E: Send, M: PoolManager<C, E>>(receiver: Arc<Mutex<Receiver<Command<C>>>>,
+                                                       inner: Arc<InnerPool<C, E, M>>) {
+    loop {
+        let mut receiver = receiver.lock();
+        let res = receiver.recv_opt();
+        drop(receiver);
+
+        match res {
+            Ok(AddConnection) => add_connection(&*inner),
+            Ok(TestConnection(_)) => {}
+            Err(()) => break,
+        }
+    }
+}
+
+fn add_connection<C: Send, E: Send, M: PoolManager<C, E>>(inner: &InnerPool<C, E, M>) {
+    let res = inner.manager.connect();
+    let mut internals = inner.internals.lock();
+    match res {
+        Ok(conn) => {
+            internals.conns.push(conn);
+        }
+        Err(err) => {
+            internals.failed_conns.push(err);
+            internals.num_conns -= 1;
+        }
+    }
+    internals.cond.signal();
+}
+
 /// A smart pointer wrapping an underlying connection.
 ///
 /// ## Note
@@ -120,12 +185,12 @@ impl<C: Send, E, M: PoolManager<C, E>> Pool<C, M> {
 /// the connection cannot be automatically returned to its pool when the
 /// `PooledConnection` drops out of scope. The `replace` method must be called,
 /// or the `PooledConnection`'s destructor will `fail!()`.
-pub struct PooledConnection<'a, C, M> {
-    pool: &'a Pool<C, M>,
+pub struct PooledConnection<'a, C, E, M> {
+    pool: &'a Pool<C, E, M>,
     conn: Option<C>,
 }
 
-impl<'a, C: Send, E, M: PoolManager<C, E>> PooledConnection<'a, C, M> {
+impl<'a, C: Send, E: Send, M: PoolManager<C, E>> PooledConnection<'a, C, E, M> {
     /// Consumes the `PooledConnection`, returning the connection to its pool.
     ///
     /// This must be called before the `PooledConnection` drops out of scope or
@@ -136,7 +201,7 @@ impl<'a, C: Send, E, M: PoolManager<C, E>> PooledConnection<'a, C, M> {
 }
 
 #[unsafe_destructor]
-impl<'a, C, M> Drop for PooledConnection<'a, C, M> {
+impl<'a, C, E, M> Drop for PooledConnection<'a, C, E, M> {
     fn drop(&mut self) {
         if self.conn.is_some() {
             fail!("You must call conn.replace()");
@@ -144,7 +209,7 @@ impl<'a, C, M> Drop for PooledConnection<'a, C, M> {
     }
 }
 
-impl<'a, C, M> Deref<C> for PooledConnection<'a, C, M> {
+impl<'a, C, E, M> Deref<C> for PooledConnection<'a, C, E, M> {
     fn deref(&self) -> &C {
         self.conn.get_ref()
     }

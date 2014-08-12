@@ -64,8 +64,12 @@ fn test_initial_size_err() {
 #[test]
 #[should_fail]
 fn test_missing_replace() {
+    fn hack_rust_14875(pool: &r2d2::Pool<FakeConnection, (), OkManager>) {
+        pool.get().unwrap();
+    }
+
     let pool = r2d2::Pool::new(Default::default(), OkManager).unwrap();
-    pool.get().unwrap();
+    hack_rust_14875(&pool);
 }
 
 #[test]
@@ -82,4 +86,18 @@ fn test_acquire_release() {
     let conn3 = pool.get().unwrap();
     conn2.replace();
     conn3.replace();
+}
+
+#[test]
+fn test_acquire_fail() {
+    let config = r2d2::Config {
+        initial_size: 0,
+        ..Default::default()
+    };
+    let manager = NthConnectFailManager { n: Mutex::new(1) };
+    let pool = r2d2::Pool::new(config, manager).unwrap();
+
+    let c1 = pool.get().unwrap();
+    assert!(pool.get().is_err());
+    c1.replace();
 }
