@@ -116,6 +116,11 @@ impl<C: Send, E: Send, M: PoolManager<C, E>> Pool<C, E, M> {
         loop {
             match internals.conns.pop_front() {
                 Some(conn) => {
+                    if self.inner.config.test_on_check_out && !self.inner.manager.is_valid(&conn) {
+                        internals.num_conns -= 1;
+                        continue;
+                    }
+
                     return Ok(PooledConnection {
                         pool: self,
                         conn: Some(conn)
@@ -156,7 +161,7 @@ fn helper_task<C: Send, E: Send, M: PoolManager<C, E>>(receiver: Arc<Mutex<Recei
 
         match res {
             Ok(AddConnection) => add_connection(&*inner),
-            Ok(TestConnection(_)) => {}
+            Ok(TestConnection(conn)) => test_connection(&*inner, conn),
             Err(()) => break,
         }
     }
@@ -175,6 +180,16 @@ fn add_connection<C: Send, E: Send, M: PoolManager<C, E>>(inner: &InnerPool<C, E
         }
     }
     internals.cond.signal();
+}
+
+fn test_connection<C: Send, E: Send, M: PoolManager<C, E>>(inner: &InnerPool<C, E, M>, conn: C) {
+    let is_valid = inner.manager.is_valid(&conn);
+    let mut internals = inner.internals.lock();
+    if is_valid {
+        internals.conns.push(conn);
+    } else {
+        internals.num_conns -= 1;
+    }
 }
 
 /// A smart pointer wrapping an underlying connection.

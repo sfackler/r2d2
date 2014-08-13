@@ -31,6 +31,11 @@ pub struct Config {
     ///
     /// Defaults to 3.
     pub helper_tasks: uint,
+    /// If true, the health of a connection will be verified before it is
+    /// checked out of the pool.
+    ///
+    /// Defaults to false.
+    pub test_on_check_out: bool,
 }
 
 impl Default for Config {
@@ -40,6 +45,7 @@ impl Default for Config {
             max_size: 15,
             acquire_increment: 3,
             helper_tasks: 3,
+            test_on_check_out: false,
         }
     }
 }
