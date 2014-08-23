@@ -1,8 +1,7 @@
+language: rust
 env:
   global:
     - secure: CLHUG7GEOO1lb8ekE5YZf8eTCOAvR7VLIP2gpS6qm0dyp1uyghw8LOthKpHBJ6m12vDCW3pc/JA2tnTpacXWMVPfQ7Rgp61otFL3Eru+grLfIdth6yEtinShMZMFVljWoT7ARUl7SKHWCn4SRqdhCB6aTqiPp+glF7+H5IPTfJY=
-install:
-  - curl http://www.rust-lang.org/rustup.sh | sudo sh -
 script:
   - cargo test
   - cargo doc --no-deps
