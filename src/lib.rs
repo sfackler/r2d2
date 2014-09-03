@@ -200,7 +200,7 @@ fn test_connection<C: Send, E: Send, M: PoolManager<C, E>>(inner: &InnerPool<C, 
 /// the connection cannot be automatically returned to its pool when the
 /// `PooledConnection` drops out of scope. The `replace` method must be called,
 /// or the `PooledConnection`'s destructor will `fail!()`.
-pub struct PooledConnection<'a, C, E, M> {
+pub struct PooledConnection<'a, C: 'a, E: 'a, M: 'a> {
     pool: &'a Pool<C, E, M>,
     conn: Option<C>,
 }
@@ -211,7 +211,7 @@ impl<'a, C: Send, E: Send, M: PoolManager<C, E>> PooledConnection<'a, C, E, M> {
     /// This must be called before the `PooledConnection` drops out of scope or
     /// its destructor will `fail!()`.
     pub fn replace(mut self) {
-        self.pool.put_back(self.conn.take_unwrap())
+        self.pool.put_back(self.conn.take().unwrap())
     }
 }
 
@@ -226,6 +226,6 @@ impl<'a, C, E, M> Drop for PooledConnection<'a, C, E, M> {
 
 impl<'a, C, E, M> Deref<C> for PooledConnection<'a, C, E, M> {
     fn deref(&self) -> &C {
-        self.conn.get_ref()
+        self.conn.as_ref().unwrap()
     }
 }
