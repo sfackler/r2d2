@@ -1,7 +1,10 @@
 //! A library providing a generic connection pool.
-#![feature(unsafe_destructor)]
+#![feature(unsafe_destructor, phase)]
 #![warn(missing_doc)]
 #![doc(html_root_url="http://www.rust-ci.org/sfackler/r2d2/doc")]
+
+#[phase(plugin, link)]
+extern crate log;
 
 use std::comm;
 use std::cmp;
@@ -23,6 +26,28 @@ pub trait PoolManager<C, E>: Send+Sync {
     /// A standard implementation would check if a simple query like `SELECT 1`
     /// succeeds.
     fn is_valid(&self, conn: &C) -> bool;
+}
+
+/// A trait which handles errors reported by the `PoolManager`.
+pub trait ErrorHandler<E>: Send+Sync {
+    /// Handles a connection error.
+    fn handle_error(&self, error: E);
+}
+
+/// An `ErrorHandler` which does nothing.
+pub struct NoopErrorHandler<E>;
+
+impl<E> ErrorHandler<E> for NoopErrorHandler<E> {
+    fn handle_error(&self, _: E) {}
+}
+
+/// An `ErrorHandler` which logs at the error level.
+pub struct LoggingErrorHandler<E>;
+
+impl<E> ErrorHandler<E> for LoggingErrorHandler<E> where E: fmt::Show {
+    fn handle_error(&self, error: E) {
+        error!("Error opening connection: {}", error);
+    }
 }
 
 /// An error type returned if pool creation fails.
@@ -54,21 +79,24 @@ struct PoolInternals<C, E> {
     num_conns: uint,
 }
 
-struct InnerPool<C, E, M> {
+struct InnerPool<C, E, M, H> {
     config: Config,
     manager: M,
+    error_handler: H,
     internals: Mutex<PoolInternals<C, E>>,
 }
 
 /// A generic connection pool.
-pub struct Pool<C, E, M> {
-    helper_chan: Sender<Command<C>>,
-    inner: Arc<InnerPool<C, E, M>>
+pub struct Pool<C, E, M, H> {
+    helper_chan: Mutex<Sender<Command<C>>>,
+    inner: Arc<InnerPool<C, E, M, H>>
 }
 
-impl<C: Send, E: Send, M: PoolManager<C, E>> Pool<C, E, M> {
+impl<C, E, M, H> Pool<C, E, M, H>
+        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     /// Creates a new connection pool.
-    pub fn new(config: Config, manager: M) -> Result<Pool<C, E, M>, NewPoolError<E>> {
+    pub fn new(config: Config, manager: M, error_handler: H)
+               -> Result<Pool<C, E, M, H>, NewPoolError<E>> {
         match config.validate() {
             Ok(()) => {}
             Err(err) => return Err(InvalidConfig(err))
@@ -90,6 +118,7 @@ impl<C: Send, E: Send, M: PoolManager<C, E>> Pool<C, E, M> {
         let inner = Arc::new(InnerPool {
             config: config,
             manager: manager,
+            error_handler: error_handler,
             internals: Mutex::new(internals),
         });
 
@@ -104,13 +133,13 @@ impl<C: Send, E: Send, M: PoolManager<C, E>> Pool<C, E, M> {
         }
 
         Ok(Pool {
-            helper_chan: sender,
+            helper_chan: Mutex::new(sender),
             inner: inner,
         })
     }
 
     /// Retrieves a connection from the pool.
-    pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, C, E, M>, E> {
+    pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, C, E, M, H>, E> {
         let mut internals = self.inner.internals.lock();
 
         loop {
@@ -135,7 +164,7 @@ impl<C: Send, E: Send, M: PoolManager<C, E>> Pool<C, E, M> {
                     let new_conns = cmp::min(self.inner.config.max_size - internals.num_conns,
                                              self.inner.config.acquire_increment);
                     for _ in range(0, new_conns) {
-                        self.helper_chan.send(AddConnection);
+                        self.helper_chan.lock().send(AddConnection);
                         internals.num_conns += 1;
                     }
 
@@ -152,8 +181,9 @@ impl<C: Send, E: Send, M: PoolManager<C, E>> Pool<C, E, M> {
     }
 }
 
-fn helper_task<C: Send, E: Send, M: PoolManager<C, E>>(receiver: Arc<Mutex<Receiver<Command<C>>>>,
-                                                       inner: Arc<InnerPool<C, E, M>>) {
+fn helper_task<C, E, M, H>(receiver: Arc<Mutex<Receiver<Command<C>>>>,
+                           inner: Arc<InnerPool<C, E, M, H>>)
+        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     loop {
         let mut receiver = receiver.lock();
         let res = receiver.recv_opt();
@@ -167,7 +197,8 @@ fn helper_task<C: Send, E: Send, M: PoolManager<C, E>>(receiver: Arc<Mutex<Recei
     }
 }
 
-fn add_connection<C: Send, E: Send, M: PoolManager<C, E>>(inner: &InnerPool<C, E, M>) {
+fn add_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>)
+        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     let res = inner.manager.connect();
     let mut internals = inner.internals.lock();
     match res {
@@ -182,7 +213,8 @@ fn add_connection<C: Send, E: Send, M: PoolManager<C, E>>(inner: &InnerPool<C, E
     internals.cond.signal();
 }
 
-fn test_connection<C: Send, E: Send, M: PoolManager<C, E>>(inner: &InnerPool<C, E, M>, conn: C) {
+fn test_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>, conn: C)
+        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     let is_valid = inner.manager.is_valid(&conn);
     let mut internals = inner.internals.lock();
     if is_valid {
@@ -200,12 +232,13 @@ fn test_connection<C: Send, E: Send, M: PoolManager<C, E>>(inner: &InnerPool<C, 
 /// the connection cannot be automatically returned to its pool when the
 /// `PooledConnection` drops out of scope. The `replace` method must be called,
 /// or the `PooledConnection`'s destructor will `fail!()`.
-pub struct PooledConnection<'a, C: 'a, E: 'a, M: 'a> {
-    pool: &'a Pool<C, E, M>,
+pub struct PooledConnection<'a, C: 'a, E: 'a, M: 'a, H: 'a> {
+    pool: &'a Pool<C, E, M, H>,
     conn: Option<C>,
 }
 
-impl<'a, C: Send, E: Send, M: PoolManager<C, E>> PooledConnection<'a, C, E, M> {
+impl<'a, C, E, M, H> PooledConnection<'a, C, E, M, H>
+        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     /// Consumes the `PooledConnection`, returning the connection to its pool.
     ///
     /// This must be called before the `PooledConnection` drops out of scope or
@@ -216,7 +249,7 @@ impl<'a, C: Send, E: Send, M: PoolManager<C, E>> PooledConnection<'a, C, E, M> {
 }
 
 #[unsafe_destructor]
-impl<'a, C, E, M> Drop for PooledConnection<'a, C, E, M> {
+impl<'a, C, E, M, H> Drop for PooledConnection<'a, C, E, M, H> {
     fn drop(&mut self) {
         if self.conn.is_some() {
             fail!("You must call conn.replace()");
@@ -224,7 +257,7 @@ impl<'a, C, E, M> Drop for PooledConnection<'a, C, E, M> {
     }
 }
 
-impl<'a, C, E, M> Deref<C> for PooledConnection<'a, C, E, M> {
+impl<'a, C, E, M, H> Deref<C> for PooledConnection<'a, C, E, M, H> {
     fn deref(&self) -> &C {
         self.conn.as_ref().unwrap()
     }

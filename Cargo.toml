@@ -3,7 +3,7 @@ name = "r2d2"
 version = "0.0.0"
 authors = ["Steven Fackler <sfackler@gmail.com>"]
 
-[[lib]]
+[lib]
 name = "r2d2"
 path = "src/lib.rs"
 test = false

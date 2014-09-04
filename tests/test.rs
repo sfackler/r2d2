@@ -48,7 +48,7 @@ fn test_initial_size_ok() {
         ..Default::default()
     };
     let manager = NthConnectFailManager { n: Mutex::new(5) };
-    assert!(r2d2::Pool::new(config, manager).is_ok());
+    assert!(r2d2::Pool::new(config, manager, r2d2::NoopErrorHandler::<()>).is_ok());
 }
 
 #[test]
@@ -58,17 +58,18 @@ fn test_initial_size_err() {
         ..Default::default()
     };
     let manager = NthConnectFailManager { n: Mutex::new(4) };
-    assert_eq!(r2d2::Pool::new(config, manager).err().unwrap(), r2d2::ConnectionError(()));
+    assert_eq!(r2d2::Pool::new(config, manager, r2d2::NoopErrorHandler::<()>).err().unwrap(),
+               r2d2::ConnectionError(()));
 }
 
 #[test]
 #[should_fail]
 fn test_missing_replace() {
-    fn hack_rust_14875(pool: &r2d2::Pool<FakeConnection, (), OkManager>) {
+    fn hack_rust_14875(pool: &r2d2::Pool<FakeConnection, (), OkManager, r2d2::NoopErrorHandler<()>>) {
         pool.get().unwrap();
     }
 
-    let pool = r2d2::Pool::new(Default::default(), OkManager).unwrap();
+    let pool = r2d2::Pool::new(Default::default(), OkManager, r2d2::NoopErrorHandler).unwrap();
     hack_rust_14875(&pool);
 }
 
@@ -78,7 +79,7 @@ fn test_acquire_release() {
         initial_size: 2,
         ..Default::default()
     };
-    let pool = r2d2::Pool::new(config, OkManager).unwrap();
+    let pool = r2d2::Pool::new(config, OkManager, r2d2::NoopErrorHandler::<()>).unwrap();
 
     let conn1 = pool.get().unwrap();
     let conn2 = pool.get().unwrap();
@@ -95,9 +96,15 @@ fn test_acquire_fail() {
         ..Default::default()
     };
     let manager = NthConnectFailManager { n: Mutex::new(1) };
-    let pool = r2d2::Pool::new(config, manager).unwrap();
+    let pool = r2d2::Pool::new(config, manager, r2d2::NoopErrorHandler::<()>).unwrap();
 
     let c1 = pool.get().unwrap();
     assert!(pool.get().is_err());
     c1.replace();
+}
+
+#[test]
+fn test_is_send_sync() {
+    fn is_send_sync<T: Send+Sync>() {}
+    is_send_sync::<r2d2::Pool<FakeConnection, (), OkManager, r2d2::NoopErrorHandler<()>>>();
 }
