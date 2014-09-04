@@ -63,7 +63,6 @@ fn test_pool_size_err() {
 }
 
 #[test]
-#[should_fail]
 fn test_missing_replace() {
     fn hack_rust_14875(pool: &r2d2::Pool<FakeConnection, (), OkManager, r2d2::NoopErrorHandler<()>>) {
         pool.get().unwrap();
@@ -83,10 +82,10 @@ fn test_acquire_release() {
 
     let conn1 = pool.get().unwrap();
     let conn2 = pool.get().unwrap();
-    conn1.replace();
+    drop(conn1);
     let conn3 = pool.get().unwrap();
-    conn2.replace();
-    conn3.replace();
+    drop(conn2);
+    drop(conn3);
 }
 
 #[test]

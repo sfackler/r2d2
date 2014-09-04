@@ -156,7 +156,8 @@ impl<C, E, M, H> Pool<C, E, M, H>
 
                     return Ok(PooledConnection {
                         pool: self,
-                        conn: Some(conn)
+                        conn: Some(conn),
+                        put_back: my_put_back,
                     })
                 }
                 None => {
@@ -168,6 +169,13 @@ impl<C, E, M, H> Pool<C, E, M, H>
                     internals.cond.wait();
                 }
             }
+        }
+
+        fn my_put_back<C, E, M, H>(pool: &Pool<C, E, M, H>,
+                                   conn: C)
+            where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E>
+        {
+            pool.put_back(conn)
         }
     }
 
@@ -205,35 +213,21 @@ fn test_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>, conn: C)
 }
 
 /// A smart pointer wrapping an underlying connection.
-///
-/// ## Note
-///
-/// Due to Rust bug [#15905](https://github.com/rust-lang/rust/issues/15905),
-/// the connection cannot be automatically returned to its pool when the
-/// `PooledConnection` drops out of scope. The `replace` method must be called,
-/// or the `PooledConnection`'s destructor will `fail!()`.
 pub struct PooledConnection<'a, C: 'a, E: 'a, M: 'a, H: 'a> {
     pool: &'a Pool<C, E, M, H>,
     conn: Option<C>,
-}
 
-impl<'a, C, E, M, H> PooledConnection<'a, C, E, M, H>
-        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
-    /// Consumes the `PooledConnection`, returning the connection to its pool.
-    ///
-    /// This must be called before the `PooledConnection` drops out of scope or
-    /// its destructor will `fail!()`.
-    pub fn replace(mut self) {
-        self.pool.put_back(self.conn.take().unwrap())
-    }
+    // Due to Rust bug [#15905](https://github.com/rust-lang/rust/issues/15905),
+    // methods on the generics of this connection cannot be called during the
+    // destructor, this is just turning a method call into a virtual call so it
+    // can work.
+    put_back: fn(&Pool<C, E, M, H>, C),
 }
 
 #[unsafe_destructor]
 impl<'a, C, E, M, H> Drop for PooledConnection<'a, C, E, M, H> {
     fn drop(&mut self) {
-        if self.conn.is_some() {
-            fail!("You must call conn.replace()");
-        }
+        (self.put_back)(self.pool, self.conn.take().unwrap())
     }
 }
 
