@@ -7,7 +7,6 @@
 extern crate log;
 
 use std::comm;
-use std::cmp;
 use std::collections::{Deque, RingBuf};
 use std::sync::{Arc, Mutex};
 use std::fmt;
@@ -144,9 +143,15 @@ impl<C, E, M, H> Pool<C, E, M, H>
         loop {
             match internals.conns.pop_front() {
                 Some(conn) => {
-                    if self.inner.config.test_on_check_out && !self.inner.manager.is_valid(&conn) {
-                        internals.num_conns -= 1;
-                        continue;
+                    if self.inner.config.test_on_check_out {
+                        drop(internals);
+                        let valid = self.inner.manager.is_valid(&conn);
+                        internals = self.inner.internals.lock();
+
+                        if !valid {
+                            internals.num_conns -= 1;
+                            continue;
+                        }
                     }
 
                     return Ok(PooledConnection {
