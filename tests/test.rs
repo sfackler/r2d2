@@ -90,20 +90,6 @@ fn test_acquire_release() {
 }
 
 #[test]
-fn test_acquire_fail() {
-    let config = r2d2::Config {
-        initial_size: 0,
-        ..Default::default()
-    };
-    let manager = NthConnectFailManager { n: Mutex::new(1) };
-    let pool = r2d2::Pool::new(config, manager, r2d2::NoopErrorHandler::<()>).unwrap();
-
-    let c1 = pool.get().unwrap();
-    assert!(pool.get().is_err());
-    c1.replace();
-}
-
-#[test]
 fn test_is_send_sync() {
     fn is_send_sync<T: Send+Sync>() {}
     is_send_sync::<r2d2::Pool<FakeConnection, (), OkManager, r2d2::NoopErrorHandler<()>>>();

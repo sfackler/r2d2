@@ -59,7 +59,7 @@ pub enum NewPoolError<E> {
     ConnectionError(E),
 }
 
-impl<E: fmt::Show> fmt::Show for NewPoolError<E> {
+impl<E> fmt::Show for NewPoolError<E> where E: fmt::Show {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             InvalidConfig(ref error) => write!(f, "Invalid config: {}", error),
@@ -69,7 +69,6 @@ impl<E: fmt::Show> fmt::Show for NewPoolError<E> {
 }
 
 enum Command<C> {
-    AddConnection,
     TestConnection(C),
 }
 
@@ -161,13 +160,6 @@ impl<C, E, M, H> Pool<C, E, M, H>
                         None => {}
                     }
 
-                    let new_conns = cmp::min(self.inner.config.max_size - internals.num_conns,
-                                             self.inner.config.acquire_increment);
-                    for _ in range(0, new_conns) {
-                        self.helper_chan.lock().send(AddConnection);
-                        internals.num_conns += 1;
-                    }
-
                     internals.cond.wait();
                 }
             }
@@ -190,27 +182,10 @@ fn helper_task<C, E, M, H>(receiver: Arc<Mutex<Receiver<Command<C>>>>,
         drop(receiver);
 
         match res {
-            Ok(AddConnection) => add_connection(&*inner),
             Ok(TestConnection(conn)) => test_connection(&*inner, conn),
             Err(()) => break,
         }
     }
-}
-
-fn add_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>)
-        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
-    let res = inner.manager.connect();
-    let mut internals = inner.internals.lock();
-    match res {
-        Ok(conn) => {
-            internals.conns.push(conn);
-        }
-        Err(err) => {
-            internals.failed_conns.push(err);
-            internals.num_conns -= 1;
-        }
-    }
-    internals.cond.signal();
 }
 
 fn test_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>, conn: C)
