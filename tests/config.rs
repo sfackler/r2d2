@@ -9,9 +9,9 @@ fn default_ok() {
 }
 
 #[test]
-fn test_zero_initial_size_err() {
+fn test_zero_pool_size_err() {
     let config = r2d2::Config {
-        initial_size: 0,
+        pool_size: 0,
         ..Default::default()
     };
     assert!(config.validate().is_err());

@@ -42,9 +42,9 @@ impl r2d2::PoolManager<FakeConnection, ()> for NthConnectFailManager {
 }
 
 #[test]
-fn test_initial_size_ok() {
+fn test_pool_size_ok() {
     let config = r2d2::Config {
-        initial_size: 5,
+        pool_size: 5,
         ..Default::default()
     };
     let manager = NthConnectFailManager { n: Mutex::new(5) };
@@ -52,9 +52,9 @@ fn test_initial_size_ok() {
 }
 
 #[test]
-fn test_initial_size_err() {
+fn test_pool_size_err() {
     let config = r2d2::Config {
-        initial_size: 5,
+        pool_size: 5,
         ..Default::default()
     };
     let manager = NthConnectFailManager { n: Mutex::new(4) };
@@ -76,7 +76,7 @@ fn test_missing_replace() {
 #[test]
 fn test_acquire_release() {
     let config = r2d2::Config {
-        initial_size: 2,
+        pool_size: 2,
         ..Default::default()
     };
     let pool = r2d2::Pool::new(config, OkManager, r2d2::NoopErrorHandler::<()>).unwrap();

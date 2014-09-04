@@ -5,12 +5,12 @@ use std::default::Default;
 /// `Config` implements `Default`, which provides a set of reasonable default
 /// values.
 pub struct Config {
-    /// The number of connections that will be made during pool creation.
+    /// The number of connections managed by the pool.
     ///
     /// Must be positive.
     ///
     /// Defaults to 10.
-    pub initial_size: uint,
+    pub pool_size: uint,
     /// The number of tasks that the pool will use for asynchronous operations
     /// such as connection creation and health checks.
     ///
@@ -28,7 +28,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Config {
         Config {
-            initial_size: 10,
+            pool_size: 10,
             helper_tasks: 3,
             test_on_check_out: false,
         }
@@ -38,8 +38,8 @@ impl Default for Config {
 impl Config {
     /// Determines if the configuration is valid
     pub fn validate(&self) -> Result<(), &'static str> {
-        if self.initial_size == 0 {
-            return Err("initial_size must be positive");
+        if self.pool_size == 0 {
+            return Err("pool_size must be positive");
         }
 
         if self.helper_tasks == 0 {

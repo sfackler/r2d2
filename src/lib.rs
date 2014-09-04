@@ -104,10 +104,10 @@ impl<C, E, M, H> Pool<C, E, M, H>
         let mut internals = PoolInternals {
             conns: RingBuf::new(),
             failed_conns: RingBuf::new(),
-            num_conns: config.initial_size,
+            num_conns: config.pool_size,
         };
 
-        for _ in range(0, config.initial_size) {
+        for _ in range(0, config.pool_size) {
             match manager.connect() {
                 Ok(conn) => internals.conns.push(conn),
                 Err(err) => return Err(ConnectionError(err)),
