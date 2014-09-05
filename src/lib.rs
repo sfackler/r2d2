@@ -77,7 +77,8 @@ struct PoolInternals<C, E> {
     num_conns: uint,
 }
 
-struct InnerPool<C, E, M, H> {
+struct InnerPool<C, E, M, H>
+        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     config: Config,
     manager: M,
     error_handler: H,
@@ -85,7 +86,8 @@ struct InnerPool<C, E, M, H> {
 }
 
 /// A generic connection pool.
-pub struct Pool<C, E, M, H> {
+pub struct Pool<C, E, M, H>
+        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     helper_chan: Mutex<Sender<Command<C>>>,
     inner: Arc<InnerPool<C, E, M, H>>
 }
@@ -157,7 +159,6 @@ impl<C, E, M, H> Pool<C, E, M, H>
                     return Ok(PooledConnection {
                         pool: self,
                         conn: Some(conn),
-                        put_back: my_put_back,
                     })
                 }
                 None => {
@@ -169,13 +170,6 @@ impl<C, E, M, H> Pool<C, E, M, H>
                     internals.cond.wait();
                 }
             }
-        }
-
-        fn my_put_back<C, E, M, H>(pool: &Pool<C, E, M, H>,
-                                   conn: C)
-            where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E>
-        {
-            pool.put_back(conn)
         }
     }
 
@@ -213,25 +207,22 @@ fn test_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>, conn: C)
 }
 
 /// A smart pointer wrapping an underlying connection.
-pub struct PooledConnection<'a, C: 'a, E: 'a, M: 'a, H: 'a> {
+pub struct PooledConnection<'a, C: 'static, E: 'static, M: 'static, H: 'static>
+        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     pool: &'a Pool<C, E, M, H>,
     conn: Option<C>,
-
-    // Due to Rust bug [#15905](https://github.com/rust-lang/rust/issues/15905),
-    // methods on the generics of this connection cannot be called during the
-    // destructor, this is just turning a method call into a virtual call so it
-    // can work.
-    put_back: fn(&Pool<C, E, M, H>, C),
 }
 
 #[unsafe_destructor]
-impl<'a, C, E, M, H> Drop for PooledConnection<'a, C, E, M, H> {
+impl<'a, C, E, M, H> Drop for PooledConnection<'a, C, E, M, H>
+        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     fn drop(&mut self) {
-        (self.put_back)(self.pool, self.conn.take().unwrap())
+        self.pool.put_back(self.conn.take().unwrap());
     }
 }
 
-impl<'a, C, E, M, H> Deref<C> for PooledConnection<'a, C, E, M, H> {
+impl<'a, C, E, M, H> Deref<C> for PooledConnection<'a, C, E, M, H>
+        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     fn deref(&self) -> &C {
         self.conn.as_ref().unwrap()
     }
