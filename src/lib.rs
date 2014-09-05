@@ -148,9 +148,9 @@ impl<C, E, M, H> Pool<C, E, M, H>
                     if self.inner.config.test_on_check_out {
                         drop(internals);
                         let valid = self.inner.manager.is_valid(&conn);
-                        internals = self.inner.internals.lock();
 
                         if !valid {
+                            internals = self.inner.internals.lock();
                             internals.num_conns -= 1;
                             continue;
                         }
