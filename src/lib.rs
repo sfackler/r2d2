@@ -68,12 +68,12 @@ impl<E> fmt::Show for NewPoolError<E> where E: fmt::Show {
 }
 
 enum Command<C> {
+    AddConnection,
     TestConnection(C),
 }
 
 struct PoolInternals<C, E> {
     conns: RingBuf<C>,
-    failed_conns: RingBuf<E>,
     num_conns: uint,
 }
 
@@ -104,7 +104,6 @@ impl<C, E, M, H> Pool<C, E, M, H>
 
         let mut internals = PoolInternals {
             conns: RingBuf::new(),
-            failed_conns: RingBuf::new(),
             num_conns: config.pool_size,
         };
 
@@ -161,14 +160,7 @@ impl<C, E, M, H> Pool<C, E, M, H>
                         conn: Some(conn),
                     })
                 }
-                None => {
-                    match internals.failed_conns.pop_front() {
-                        Some(err) => return Err(err),
-                        None => {}
-                    }
-
-                    internals.cond.wait();
-                }
+                None => internals.cond.wait(),
             }
         }
     }
@@ -189,9 +181,23 @@ fn helper_task<C, E, M, H>(receiver: Arc<Mutex<Receiver<Command<C>>>>,
         drop(receiver);
 
         match res {
+            Ok(AddConnection) => add_connection(&*inner),
             Ok(TestConnection(conn)) => test_connection(&*inner, conn),
             Err(()) => break,
         }
+    }
+}
+
+fn add_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>)
+        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
+    match inner.manager.connect() {
+        Ok(conn) => {
+            let mut internals = inner.internals.lock();
+            internals.conns.push(conn);
+            internals.num_conns += 1;
+            internals.cond.signal();
+        }
+        Err(err) => inner.error_handler.handle_error(err),
     }
 }
 
