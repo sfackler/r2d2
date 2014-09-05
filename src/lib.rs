@@ -207,7 +207,7 @@ fn test_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>, conn: C)
 }
 
 /// A smart pointer wrapping an underlying connection.
-pub struct PooledConnection<'a, C: 'static, E: 'static, M: 'static, H: 'static>
+pub struct PooledConnection<'a, C, E, M, H>
         where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     pool: &'a Pool<C, E, M, H>,
     conn: Option<C>,
