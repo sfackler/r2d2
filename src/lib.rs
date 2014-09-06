@@ -98,10 +98,7 @@ impl<C, E, M, H> Pool<C, E, M, H>
     /// Creates a new connection pool.
     pub fn new(config: Config, manager: M, error_handler: H)
                -> Result<Pool<C, E, M, H>, NewPoolError<E>> {
-        match config.validate() {
-            Ok(()) => {}
-            Err(err) => return Err(InvalidConfig(err))
-        }
+        try!(config.validate().map_err(InvalidConfig));
 
         let mut internals = PoolInternals {
             conns: RingBuf::new(),
