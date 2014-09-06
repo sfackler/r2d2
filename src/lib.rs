@@ -41,9 +41,9 @@ impl<E> ErrorHandler<E> for NoopErrorHandler {
 }
 
 /// An `ErrorHandler` which logs at the error level.
-pub struct LoggingErrorHandler<E>;
+pub struct LoggingErrorHandler;
 
-impl<E> ErrorHandler<E> for LoggingErrorHandler<E> where E: fmt::Show {
+impl<E> ErrorHandler<E> for LoggingErrorHandler where E: fmt::Show {
     fn handle_error(&self, error: E) {
         error!("Error opening connection: {}", error);
     }
