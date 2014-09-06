@@ -34,9 +34,9 @@ pub trait ErrorHandler<E>: Send+Sync {
 }
 
 /// An `ErrorHandler` which does nothing.
-pub struct NoopErrorHandler<E>;
+pub struct NoopErrorHandler;
 
-impl<E> ErrorHandler<E> for NoopErrorHandler<E> {
+impl<E> ErrorHandler<E> for NoopErrorHandler {
     fn handle_error(&self, _: E) {}
 }
 
