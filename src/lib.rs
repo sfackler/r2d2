@@ -25,7 +25,7 @@ pub trait PoolManager<C, E>: Send+Sync {
     ///
     /// A standard implementation would check if a simple query like `SELECT 1`
     /// succeeds.
-    fn is_valid(&self, conn: &C) -> bool;
+    fn is_valid(&self, conn: &mut C) -> bool;
 
     /// *Quickly* determines if the connection is no longer usable.
     ///
@@ -36,7 +36,7 @@ pub trait PoolManager<C, E>: Send+Sync {
     /// For example, an implementation might check if the underlying TCP socket
     /// has disconnected. Implementations that do not support this kind of
     /// fast health check may simply return `false`.
-    fn has_broken(&self, conn: &C) -> bool;
+    fn has_broken(&self, conn: &mut C) -> bool;
 }
 
 /// A trait which handles errors reported by the `PoolManager`.
@@ -152,10 +152,10 @@ impl<C, E, M, H> Pool<C, E, M, H>
 
         loop {
             match internals.conns.pop_front() {
-                Some(conn) => {
+                Some(mut conn) => {
                     if self.inner.config.test_on_check_out {
                         drop(internals);
-                        let valid = self.inner.manager.is_valid(&conn);
+                        let valid = self.inner.manager.is_valid(&mut conn);
 
                         if !valid {
                             internals = self.inner.internals.lock();
@@ -174,9 +174,9 @@ impl<C, E, M, H> Pool<C, E, M, H>
         }
     }
 
-    fn put_back(&self, conn: C) {
+    fn put_back(&self, mut conn: C) {
         // This is specified to be fast, but call it before locking anyways
-        let broken = self.inner.manager.has_broken(&conn);
+        let broken = self.inner.manager.has_broken(&mut conn);
 
         let mut internals = self.inner.internals.lock();
         if broken {
@@ -217,9 +217,9 @@ fn add_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>)
     }
 }
 
-fn test_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>, conn: C)
+fn test_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>, mut conn: C)
         where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
-    let is_valid = inner.manager.is_valid(&conn);
+    let is_valid = inner.manager.is_valid(&mut conn);
     let mut internals = inner.internals.lock();
     if is_valid {
         internals.conns.push(conn);
