@@ -221,7 +221,7 @@ pub struct PooledConnection<'a, C, E, M, H>
 impl<'a, C, E, M, H> Drop for PooledConnection<'a, C, E, M, H>
         where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     fn drop(&mut self) {
-        self.conn.take().map(|conn| self.pool.put_back(conn));
+        self.pool.put_back(self.conn.take().unwrap());
     }
 }
 
