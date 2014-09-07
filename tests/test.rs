@@ -2,7 +2,7 @@ extern crate r2d2;
 
 use std::comm;
 use std::sync::{Mutex, Arc};
-use std::sync::atomic::{AtomicBool, SeqCst};
+use std::sync::atomic::{AtomicBool, INIT_ATOMIC_BOOL, SeqCst};
 use std::default::Default;
 
 mod config;
@@ -19,6 +19,10 @@ impl r2d2::PoolManager<FakeConnection, ()> for OkManager {
 
     fn is_valid(&self, _: &FakeConnection) -> bool {
         true
+    }
+
+    fn has_broken(&self, _: &FakeConnection) -> bool {
+        false
     }
 }
 
@@ -39,6 +43,10 @@ impl r2d2::PoolManager<FakeConnection, ()> for NthConnectFailManager {
 
     fn is_valid(&self, _: &FakeConnection) -> bool {
         true
+    }
+
+    fn has_broken(&self, _: &FakeConnection) -> bool {
+        false
     }
 }
 
@@ -105,6 +113,10 @@ fn test_issue_2_unlocked_during_is_valid() {
             }
             true
         }
+
+        fn has_broken(&self, _: &FakeConnection) -> bool {
+            false
+        }
     }
 
     let (s1, r1) = comm::sync_channel(0);
@@ -131,4 +143,40 @@ fn test_issue_2_unlocked_during_is_valid() {
     // get call by other task has triggered the health check
     pool.get().unwrap();
     s2.send(());
+}
+
+#[test]
+fn test_drop_on_broken() {
+    static mut DROPPED: AtomicBool = INIT_ATOMIC_BOOL;
+    unsafe { DROPPED.store(false, SeqCst); }
+
+    struct Connection;
+
+    impl Drop for Connection {
+        fn drop(&mut self) {
+            unsafe { DROPPED.store(true, SeqCst); }
+        }
+    }
+
+    struct Handler;
+
+    impl r2d2::PoolManager<Connection, ()> for Handler {
+        fn connect(&self) -> Result<Connection, ()> {
+            Ok(Connection)
+        }
+
+        fn is_valid(&self, _: &Connection) -> bool {
+            true
+        }
+
+        fn has_broken(&self, _: &Connection) -> bool {
+            true
+        }
+    }
+
+    let pool = r2d2::Pool::new(Default::default(), Handler, r2d2::NoopErrorHandler).unwrap();
+
+    drop(pool.get().unwrap());
+
+    assert!(unsafe { DROPPED.load(SeqCst) });
 }

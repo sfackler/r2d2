@@ -26,6 +26,17 @@ pub trait PoolManager<C, E>: Send+Sync {
     /// A standard implementation would check if a simple query like `SELECT 1`
     /// succeeds.
     fn is_valid(&self, conn: &C) -> bool;
+
+    /// *Quickly* determines if the connection is no longer usable.
+    ///
+    /// This will be called synchronously every time a connection is returned
+    /// to the pool, so it should *not* block. If it returns `true`, the
+    /// connection will be discarded.
+    ///
+    /// For example, an implementation might check if the underlying TCP socket
+    /// has disconnected. Implementations that do not support this kind of
+    /// fast health check may simply return `false`.
+    fn has_broken(&self, conn: &C) -> bool;
 }
 
 /// A trait which handles errors reported by the `PoolManager`.
@@ -164,9 +175,16 @@ impl<C, E, M, H> Pool<C, E, M, H>
     }
 
     fn put_back(&self, conn: C) {
+        // This is specified to be fast, but call it before locking anyways
+        let broken = self.inner.manager.has_broken(&conn);
+
         let mut internals = self.inner.internals.lock();
-        internals.conns.push(conn);
-        internals.cond.signal();
+        if broken {
+            internals.num_conns -= 1;
+        } else {
+            internals.conns.push(conn);
+            internals.cond.signal();
+        }
     }
 }
 
