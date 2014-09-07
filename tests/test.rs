@@ -10,7 +10,6 @@ mod config;
 #[deriving(Show, PartialEq)]
 struct FakeConnection;
 
-#[deriving(Default)]
 struct OkManager;
 
 impl r2d2::PoolManager<FakeConnection, ()> for OkManager {
