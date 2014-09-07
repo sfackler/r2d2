@@ -63,16 +63,6 @@ fn test_pool_size_err() {
 }
 
 #[test]
-fn test_missing_replace() {
-    fn hack_rust_14875(pool: &r2d2::Pool<FakeConnection, (), OkManager, r2d2::NoopErrorHandler>) {
-        pool.get().unwrap();
-    }
-
-    let pool = r2d2::Pool::new(Default::default(), OkManager, r2d2::NoopErrorHandler).unwrap();
-    hack_rust_14875(&pool);
-}
-
-#[test]
 fn test_acquire_release() {
     let config = r2d2::Config {
         pool_size: 2,
