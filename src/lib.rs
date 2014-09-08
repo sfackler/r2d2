@@ -84,7 +84,7 @@ enum Command<C> {
     TestConnection(C),
 }
 
-struct PoolInternals<C, E> {
+struct PoolInternals<C> {
     conns: RingBuf<C>,
     num_conns: uint,
 }
@@ -94,7 +94,7 @@ struct InnerPool<C, E, M, H>
     config: Config,
     manager: M,
     error_handler: H,
-    internals: Mutex<PoolInternals<C, E>>,
+    internals: Mutex<PoolInternals<C>>,
 }
 
 /// A generic connection pool.
