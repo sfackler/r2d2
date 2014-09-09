@@ -153,15 +153,13 @@ impl<C, E, M, H> Pool<C, E, M, H>
         loop {
             match internals.conns.pop_front() {
                 Some(mut conn) => {
-                    if self.inner.config.test_on_check_out {
-                        drop(internals);
-                        let valid = self.inner.manager.is_valid(&mut conn);
+                    drop(internals);
 
-                        if !valid {
-                            internals = self.inner.internals.lock();
-                            internals.num_conns -= 1;
-                            continue;
-                        }
+                    if self.inner.config.test_on_check_out &&
+                            !self.inner.manager.is_valid(&mut conn) {
+                        internals = self.inner.internals.lock();
+                        internals.num_conns -= 1;
+                        continue;
                     }
 
                     return Ok(PooledConnection {
