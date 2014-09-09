@@ -147,7 +147,7 @@ impl<C, E, M, H> Pool<C, E, M, H>
     }
 
     /// Retrieves a connection from the pool.
-    pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, C, E, M, H>, E> {
+    pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, C, E, M, H>, ()> {
         let mut internals = self.inner.internals.lock();
 
         loop {
