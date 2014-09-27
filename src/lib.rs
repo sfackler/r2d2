@@ -41,7 +41,7 @@ pub trait PoolManager<C, E>: Send+Sync {
 
 /// A trait which handles errors reported by the `PoolManager`.
 pub trait ErrorHandler<E>: Send+Sync {
-    /// Handles a connection error.
+    /// Handles an error.
     fn handle_error(&self, error: E);
 }
 
