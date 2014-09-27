@@ -25,7 +25,7 @@ pub trait PoolManager<C, E>: Send+Sync {
     ///
     /// A standard implementation would check if a simple query like `SELECT 1`
     /// succeeds.
-    fn is_valid(&self, conn: &mut C) -> bool;
+    fn is_valid(&self, conn: &mut C) -> Result<(), E>;
 
     /// *Quickly* determines if the connection is no longer usable.
     ///
@@ -161,11 +161,16 @@ impl<C, E, M, H> Pool<C, E, M, H>
                 Some(mut conn) => {
                     drop(internals);
 
-                    if self.inner.config.test_on_check_out &&
-                            !self.inner.manager.is_valid(&mut conn) {
-                        internals = self.inner.internals.lock();
-                        internals.num_conns -= 1;
-                        continue;
+                    if self.inner.config.test_on_check_out {
+                        match self.inner.manager.is_valid(&mut conn) {
+                            Ok(()) => {}
+                            Err(e) => {
+                                self.inner.error_handler.handle_error(e);
+                                internals = self.inner.internals.lock();
+                                internals.num_conns -= 1;
+                                continue;
+                            }
+                        }
                     }
 
                     return Ok(PooledConnection {
@@ -225,10 +230,12 @@ fn test_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>, mut conn: C)
         where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     let is_valid = inner.manager.is_valid(&mut conn);
     let mut internals = inner.internals.lock();
-    if is_valid {
-        internals.conns.push(conn);
-    } else {
-        internals.num_conns -= 1;
+    match is_valid {
+        Ok(()) => internals.conns.push(conn),
+        Err(e) => {
+            inner.error_handler.handle_error(e);
+            internals.num_conns -= 1;
+        }
     }
 }
 

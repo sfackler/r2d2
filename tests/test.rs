@@ -19,8 +19,8 @@ impl r2d2::PoolManager<FakeConnection, ()> for OkManager {
         Ok(FakeConnection)
     }
 
-    fn is_valid(&self, _: &mut FakeConnection) -> bool {
-        true
+    fn is_valid(&self, _: &mut FakeConnection) -> Result<(), ()> {
+        Ok(())
     }
 
     fn has_broken(&self, _: &mut FakeConnection) -> bool {
@@ -43,8 +43,8 @@ impl r2d2::PoolManager<FakeConnection, ()> for NthConnectFailManager {
         }
     }
 
-    fn is_valid(&self, _: &mut FakeConnection) -> bool {
-        true
+    fn is_valid(&self, _: &mut FakeConnection) -> Result<(), ()> {
+        Ok(())
     }
 
     fn has_broken(&self, _: &mut FakeConnection) -> bool {
@@ -108,12 +108,12 @@ fn test_issue_2_unlocked_during_is_valid() {
             Ok(FakeConnection)
         }
 
-        fn is_valid(&self, _: &mut FakeConnection) -> bool {
+        fn is_valid(&self, _: &mut FakeConnection) -> Result<(), ()> {
             if self.first.compare_and_swap(true, false, SeqCst) {
                 self.s.lock().send(());
                 self.r.lock().recv();
             }
-            true
+            Ok(())
         }
 
         fn has_broken(&self, _: &mut FakeConnection) -> bool {
@@ -167,8 +167,8 @@ fn test_drop_on_broken() {
             Ok(Connection)
         }
 
-        fn is_valid(&self, _: &mut Connection) -> bool {
-            true
+        fn is_valid(&self, _: &mut Connection) -> Result<(), ()> {
+            Ok(())
         }
 
         fn has_broken(&self, _: &mut Connection) -> bool {
