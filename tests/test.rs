@@ -5,6 +5,8 @@ use std::sync::{Mutex, Arc};
 use std::sync::atomic::{AtomicBool, INIT_ATOMIC_BOOL, SeqCst};
 use std::default::Default;
 
+use r2d2::ErrorHandler;
+
 mod config;
 
 #[deriving(Show, PartialEq)]
@@ -179,4 +181,12 @@ fn test_drop_on_broken() {
     drop(pool.get().unwrap());
 
     assert!(unsafe { DROPPED.load(SeqCst) });
+}
+
+// Just make sure that a boxed error handler works and doesn't self recurse or anything
+#[test]
+fn test_boxed_error_handler() {
+    let handler: Box<ErrorHandler<()>+Send+Sync> = box r2d2::NoopErrorHandler;
+    handler.handle_error(());
+    r2d2::Pool::new(Default::default(), OkManager, handler).unwrap();
 }

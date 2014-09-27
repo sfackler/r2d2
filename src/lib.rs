@@ -45,6 +45,12 @@ pub trait ErrorHandler<E>: Send+Sync {
     fn handle_error(&self, error: E);
 }
 
+impl<E> ErrorHandler<E> for Box<ErrorHandler<E>+Sync+Send> {
+    fn handle_error(&self, error: E) {
+        (**self).handle_error(error)
+    }
+}
+
 /// An `ErrorHandler` which does nothing.
 pub struct NoopErrorHandler;
 
