@@ -63,7 +63,7 @@ pub struct LoggingErrorHandler;
 
 impl<E> ErrorHandler<E> for LoggingErrorHandler where E: fmt::Show {
     fn handle_error(&self, error: E) {
-        error!("Error opening connection: {}", error);
+        error!("Connection error: {}", error);
     }
 }
 
