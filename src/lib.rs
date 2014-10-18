@@ -1,5 +1,5 @@
 //! A library providing a generic connection pool.
-#![feature(unsafe_destructor, phase)]
+#![feature(unsafe_destructor, phase, if_let)]
 #![warn(missing_doc)]
 #![doc(html_root_url="http://www.rust-ci.org/sfackler/r2d2/doc")]
 
@@ -63,7 +63,7 @@ pub struct LoggingErrorHandler;
 
 impl<E> ErrorHandler<E> for LoggingErrorHandler where E: fmt::Show {
     fn handle_error(&self, error: E) {
-        error!("Connection error: {}", error);
+        error!("Error opening connection: {}", error);
     }
 }
 
@@ -77,8 +77,7 @@ struct PoolInternals<C> {
     num_conns: uint,
 }
 
-struct InnerPool<C, E, M, H>
-        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
+struct InnerPool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     config: Config,
     manager: M,
     error_handler: H,
@@ -86,8 +85,7 @@ struct InnerPool<C, E, M, H>
 }
 
 /// A generic connection pool.
-pub struct Pool<C, E, M, H>
-        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
+pub struct Pool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     helper_chan: Mutex<Sender<Command<C>>>,
     inner: Arc<InnerPool<C, E, M, H>>
 }
@@ -143,14 +141,11 @@ impl<C, E, M, H> Pool<C, E, M, H>
                     drop(internals);
 
                     if self.inner.config.test_on_check_out {
-                        match self.inner.manager.is_valid(&mut conn) {
-                            Ok(()) => {}
-                            Err(e) => {
-                                self.inner.error_handler.handle_error(e);
-                                internals = self.inner.internals.lock();
-                                internals.num_conns -= 1;
-                                continue;
-                            }
+                        if let Err(e) = self.inner.manager.is_valid(&mut conn) {
+                            self.inner.error_handler.handle_error(e);
+                            internals = self.inner.internals.lock();
+                            internals.num_conns -= 1;
+                            continue
                         }
                     }
 
@@ -220,7 +215,7 @@ fn test_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>, mut conn: C)
     }
 }
 
-/// A smart pointer wrapping an underlying connection.
+/// A smart pointer wrapping a connection.
 pub struct PooledConnection<'a, C, E, M, H>
         where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     pool: &'a Pool<C, E, M, H>,
