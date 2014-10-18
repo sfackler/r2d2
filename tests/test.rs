@@ -59,18 +59,11 @@ fn test_pool_size_ok() {
         ..Default::default()
     };
     let manager = NthConnectFailManager { n: Mutex::new(5) };
-    assert!(r2d2::Pool::new(config, manager, r2d2::NoopErrorHandler).is_ok());
-}
-
-#[test]
-fn test_pool_size_err() {
-    let config = r2d2::Config {
-        pool_size: 5,
-        ..Default::default()
-    };
-    let manager = NthConnectFailManager { n: Mutex::new(4) };
-    assert_eq!(r2d2::Pool::new(config, manager, r2d2::NoopErrorHandler).err().unwrap(),
-               r2d2::ConnectionError(()));
+    let pool = r2d2::Pool::new(config, manager, r2d2::NoopErrorHandler).unwrap();
+    let mut conns = vec![];
+    for _ in range(0, config.pool_size) {
+        conns.push(pool.get().unwrap());
+    }
 }
 
 #[test]

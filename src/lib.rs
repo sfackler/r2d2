@@ -67,24 +67,6 @@ impl<E> ErrorHandler<E> for LoggingErrorHandler where E: fmt::Show {
     }
 }
 
-/// An error type returned if pool creation fails.
-#[deriving(PartialEq, Eq)]
-pub enum NewPoolError<E> {
-    /// The provided pool configuration was invalid.
-    InvalidConfig(&'static str),
-    /// The manager returned an error when creating a connection.
-    ConnectionError(E),
-}
-
-impl<E> fmt::Show for NewPoolError<E> where E: fmt::Show {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            InvalidConfig(ref error) => write!(f, "Invalid config: {}", error),
-            ConnectionError(ref error) => write!(f, "Unable to create connections: {}", error),
-        }
-    }
-}
-
 enum Command<C> {
     AddConnection,
     TestConnection(C),
@@ -113,21 +95,16 @@ pub struct Pool<C, E, M, H>
 impl<C, E, M, H> Pool<C, E, M, H>
         where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     /// Creates a new connection pool.
+    ///
+    /// Returns an `Err` value only if `config` is invalid.
     pub fn new(config: Config, manager: M, error_handler: H)
-               -> Result<Pool<C, E, M, H>, NewPoolError<E>> {
-        try!(config.validate().map_err(InvalidConfig));
+               -> Result<Pool<C, E, M, H>, &'static str> {
+        try!(config.validate());
 
-        let mut internals = PoolInternals {
+        let internals = PoolInternals {
             conns: RingBuf::new(),
             num_conns: config.pool_size,
         };
-
-        for _ in range(0, config.pool_size) {
-            match manager.connect() {
-                Ok(conn) => internals.conns.push(conn),
-                Err(err) => return Err(ConnectionError(err)),
-            }
-        }
 
         let inner = Arc::new(InnerPool {
             config: config,
@@ -144,6 +121,10 @@ impl<C, E, M, H> Pool<C, E, M, H>
             let inner = inner.clone();
             let receiver = receiver.clone();
             spawn(proc() helper_task(receiver, inner));
+        }
+
+        for _ in range(0, config.pool_size) {
+            sender.send(AddConnection);
         }
 
         Ok(Pool {
@@ -201,7 +182,7 @@ fn helper_task<C, E, M, H>(receiver: Arc<Mutex<Receiver<Command<C>>>>,
                            inner: Arc<InnerPool<C, E, M, H>>)
         where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     loop {
-        let mut receiver = receiver.lock();
+        let receiver = receiver.lock();
         let res = receiver.recv_opt();
         drop(receiver);
 
