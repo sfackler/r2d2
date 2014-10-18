@@ -149,14 +149,14 @@ fn test_issue_2_unlocked_during_is_valid() {
 
 #[test]
 fn test_drop_on_broken() {
-    static mut DROPPED: AtomicBool = INIT_ATOMIC_BOOL;
-    unsafe { DROPPED.store(false, SeqCst); }
+    static DROPPED: AtomicBool = INIT_ATOMIC_BOOL;
+    DROPPED.store(false, SeqCst);
 
     struct Connection;
 
     impl Drop for Connection {
         fn drop(&mut self) {
-            unsafe { DROPPED.store(true, SeqCst); }
+            DROPPED.store(true, SeqCst);
         }
     }
 
@@ -180,7 +180,7 @@ fn test_drop_on_broken() {
 
     drop(pool.get().unwrap());
 
-    assert!(unsafe { DROPPED.load(SeqCst) });
+    assert!(DROPPED.load(SeqCst));
 }
 
 // Just make sure that a boxed error handler works and doesn't self recurse or anything
