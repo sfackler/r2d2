@@ -260,3 +260,10 @@ impl<'a, C, E, M, H> Deref<C> for PooledConnection<'a, C, E, M, H>
         self.conn.as_ref().unwrap()
     }
 }
+
+impl<'a, C, E, M, H> DerefMut<C> for PooledConnection<'a, C, E, M, H>
+        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
+    fn deref_mut(&mut self) -> &mut C {
+        self.conn.as_mut().unwrap()
+    }
+}
