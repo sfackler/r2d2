@@ -19,8 +19,8 @@ pub struct Config {
     ///
     /// Defaults to 3.
     pub helper_tasks: uint,
-    /// If true, the health of a connection will be verified before it is
-    /// checked out of the pool.
+    /// If true, the health of a connection will be verified via a call to
+    /// `PoolManager::is_valid` before it is checked out of the pool.
     ///
     /// Defaults to false.
     pub test_on_check_out: bool,
