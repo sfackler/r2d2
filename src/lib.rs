@@ -1,7 +1,7 @@
 //! A library providing a generic connection pool.
 #![feature(unsafe_destructor, phase, if_let)]
 #![warn(missing_doc)]
-#![doc(html_root_url="http://www.rust-ci.org/sfackler/r2d2/doc")]
+#![doc(html_root_url="https://sfackler.github.io/doc")]
 
 #[phase(plugin, link)]
 extern crate log;
