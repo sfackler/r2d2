@@ -206,13 +206,11 @@ fn add_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>)
 
 fn test_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>, mut conn: C)
         where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
-    let is_valid = inner.manager.is_valid(&mut conn);
-    let mut internals = inner.internals.lock();
-    match is_valid {
-        Ok(()) => internals.conns.push(conn),
+    match inner.manager.is_valid(&mut conn) {
+        Ok(()) => inner.internals.lock().conns.push(conn),
         Err(e) => {
             inner.error_handler.handle_error(e);
-            internals.num_conns -= 1;
+            inner.internals.lock().num_conns -= 1;
         }
     }
 }
