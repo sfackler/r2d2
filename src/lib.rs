@@ -12,7 +12,7 @@ use std::collections::{Deque, RingBuf};
 use std::sync::{Arc, Mutex};
 use std::fmt;
 
-pub use config::Config;
+pub use config::{Config, ConfigError, ZeroPoolSize, ZeroHelperTasks};
 
 mod config;
 
@@ -96,7 +96,7 @@ impl<C, E, M, H> Pool<C, E, M, H>
     ///
     /// Returns an `Err` value only if `config` is invalid.
     pub fn new(config: Config, manager: M, error_handler: H)
-               -> Result<Pool<C, E, M, H>, &'static str> {
+               -> Result<Pool<C, E, M, H>, ConfigError> {
         try!(config.validate());
 
         let internals = PoolInternals {

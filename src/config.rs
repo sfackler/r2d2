@@ -1,4 +1,5 @@
 use std::default::Default;
+use std::fmt;
 
 /// A struct specifying the runtime configuration of a pool.
 ///
@@ -38,16 +39,33 @@ impl Default for Config {
 
 impl Config {
     /// Determines if the configuration is valid
-    pub fn validate(&self) -> Result<(), &'static str> {
+    pub fn validate(&self) -> Result<(), ConfigError> {
         if self.pool_size == 0 {
-            return Err("pool_size must be positive");
+            return Err(ZeroPoolSize);
         }
 
         if self.helper_tasks == 0 {
-            return Err("helper_tasks must be positive");
+            return Err(ZeroHelperTasks);
         }
 
         Ok(())
     }
 }
 
+/// An enumeration of reasons that a `Config` is invalid
+#[deriving(Clone, PartialEq, Eq)]
+pub enum ConfigError {
+    /// pool_size was zero
+    ZeroPoolSize,
+    /// helper_tasks was zero
+    ZeroHelperTasks,
+}
+
+impl fmt::Show for ConfigError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            ZeroPoolSize => write!(fmt, "pool_size must be positive"),
+            ZeroHelperTasks => write!(fmt, "helper_tasks must be positive"),
+        }
+    }
+}
