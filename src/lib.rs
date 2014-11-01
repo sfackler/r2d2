@@ -1,6 +1,6 @@
 //! A library providing a generic connection pool.
 #![feature(unsafe_destructor, phase, if_let)]
-#![warn(missing_doc)]
+#![warn(missing_docs)]
 #![doc(html_root_url="https://sfackler.github.io/doc")]
 
 #[phase(plugin, link)]
