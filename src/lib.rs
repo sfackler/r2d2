@@ -182,10 +182,8 @@ fn helper_task<C, E, M, H>(receiver: Arc<Mutex<Receiver<Command<C>>>>,
         drop(receiver);
 
         match res {
-            // FIXME(rust-lang/rust#18258): shouldn't need to specify these type
-            //                              parameters explicitly
-            Ok(AddConnection) => add_connection::<C, E, M, H>(&*inner),
-            Ok(TestConnection(conn)) => test_connection::<C, E, M, H>(&*inner, conn),
+            Ok(AddConnection) => add_connection(&*inner),
+            Ok(TestConnection(conn)) => test_connection(&*inner, conn),
             Err(()) => break,
         }
     }
