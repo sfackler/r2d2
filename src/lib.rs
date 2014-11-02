@@ -8,7 +8,7 @@ extern crate log;
 extern crate serialize;
 
 use std::comm;
-use std::collections::{Deque, RingBuf};
+use std::collections::RingBuf;
 use std::sync::{Arc, Mutex};
 use std::fmt;
 
