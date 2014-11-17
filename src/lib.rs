@@ -167,7 +167,7 @@ impl<C, E, M, H> Pool<C, E, M, H>
         if broken {
             internals.num_conns -= 1;
         } else {
-            internals.conns.push(conn);
+            internals.conns.push_back(conn);
             internals.cond.signal();
         }
     }
@@ -194,7 +194,7 @@ fn add_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>)
     match inner.manager.connect() {
         Ok(conn) => {
             let mut internals = inner.internals.lock();
-            internals.conns.push(conn);
+            internals.conns.push_back(conn);
             internals.num_conns += 1;
             internals.cond.signal();
         }
@@ -205,7 +205,7 @@ fn add_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>)
 fn test_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>, mut conn: C)
         where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     match inner.manager.is_valid(&mut conn) {
-        Ok(()) => inner.internals.lock().conns.push(conn),
+        Ok(()) => inner.internals.lock().conns.push_back(conn),
         Err(e) => {
             inner.error_handler.handle_error(e);
             inner.internals.lock().num_conns -= 1;
