@@ -1,6 +1,8 @@
 use std::default::Default;
 use std::fmt;
 
+pub use self::ConfigError::{ZeroPoolSize, ZeroHelperTasks};
+
 /// A struct specifying the runtime configuration of a pool.
 ///
 /// `Config` implements `Default`, which provides a set of reasonable default
