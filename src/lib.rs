@@ -122,7 +122,7 @@ impl<C, E, M, H> Pool<C, E, M, H>
         }
 
         for _ in range(0, config.pool_size) {
-            sender.send(AddConnection);
+            sender.send(Command::AddConnection);
         }
 
         Ok(Pool {
@@ -182,8 +182,8 @@ fn helper_task<C, E, M, H>(receiver: Arc<Mutex<Receiver<Command<C>>>>,
         drop(receiver);
 
         match res {
-            Ok(AddConnection) => add_connection(&*inner),
-            Ok(TestConnection(conn)) => test_connection(&*inner, conn),
+            Ok(Command::AddConnection) => add_connection(&*inner),
+            Ok(Command::TestConnection(conn)) => test_connection(&*inner, conn),
             Err(()) => break,
         }
     }
