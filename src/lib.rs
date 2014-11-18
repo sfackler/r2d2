@@ -12,7 +12,7 @@ use std::collections::RingBuf;
 use std::sync::{Arc, Mutex};
 use std::fmt;
 
-pub use config::{Config, ConfigError, ZeroPoolSize, ZeroHelperTasks};
+pub use config::{Config, ConfigError};
 
 mod config;
 
