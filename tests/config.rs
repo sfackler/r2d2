@@ -14,7 +14,7 @@ fn test_zero_pool_size_err() {
         pool_size: 0,
         ..Default::default()
     };
-    assert_eq!(Err(r2d2::ZeroPoolSize), config.validate());
+    assert_eq!(Err(r2d2::ConfigError::ZeroPoolSize), config.validate());
 }
 
 #[test]
@@ -23,5 +23,5 @@ fn test_zero_helper_tasks_err() {
         helper_tasks: 0,
         ..Default::default()
     };
-    assert_eq!(Err(r2d2::ZeroHelperTasks), config.validate());
+    assert_eq!(Err(r2d2::ConfigError::ZeroHelperTasks), config.validate());
 }
