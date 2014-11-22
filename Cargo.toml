@@ -4,6 +4,10 @@ version = "0.0.1"
 authors = ["Steven Fackler <sfackler@gmail.com>"]
 license = "MIT"
 description = "A generic connection pool"
+repository = "https://github.com/sfackler/r2d2"
+documentation = "https://sfackler.github.io/doc/r2d2"
+readme = "README.md"
+keywords = ["database", "pool"]
 
 [lib]
 name = "r2d2"
