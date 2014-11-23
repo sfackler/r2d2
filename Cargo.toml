@@ -1,6 +1,6 @@
 [package]
 name = "r2d2"
-version = "0.0.1"
+version = "0.1.0"
 authors = ["Steven Fackler <sfackler@gmail.com>"]
 license = "MIT"
 description = "A generic connection pool"
