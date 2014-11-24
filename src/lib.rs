@@ -7,9 +7,8 @@
 extern crate log;
 extern crate serialize;
 
-use std::comm;
 use std::collections::RingBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, TaskPool};
 use std::fmt;
 
 pub use config::{Config, ConfigError};
@@ -67,11 +66,6 @@ impl<E> ErrorHandler<E> for LoggingErrorHandler where E: fmt::Show {
     }
 }
 
-enum Command<C> {
-    AddConnection,
-    TestConnection(C),
-}
-
 struct PoolInternals<C> {
     conns: RingBuf<C>,
     num_conns: uint,
@@ -86,8 +80,8 @@ struct InnerPool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: Er
 
 /// A generic connection pool.
 pub struct Pool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
-    helper_chan: Mutex<Sender<Command<C>>>,
-    inner: Arc<InnerPool<C, E, M, H>>
+    inner: Arc<InnerPool<C, E, M, H>>,
+    task_pool: Mutex<TaskPool>,
 }
 
 impl<C, E, M, H> Pool<C, E, M, H>
@@ -111,24 +105,16 @@ impl<C, E, M, H> Pool<C, E, M, H>
             internals: Mutex::new(internals),
         });
 
-        let (sender, receiver) = comm::channel();
-        // FIXME :(
-        let receiver = Arc::new(Mutex::new(receiver));
-
-        for _ in range(0, config.helper_tasks) {
-            let inner = inner.clone();
-            let receiver = receiver.clone();
-            spawn(proc() helper_task(receiver, inner));
-        }
+        let pool = Pool {
+            inner: inner,
+            task_pool: Mutex::new(TaskPool::new(config.helper_tasks)),
+        };
 
         for _ in range(0, config.pool_size) {
-            sender.send(Command::AddConnection);
+            pool.add_connection();
         }
 
-        Ok(Pool {
-            helper_chan: Mutex::new(sender),
-            inner: inner,
-        })
+        Ok(pool)
     }
 
     /// Retrieves a connection from the pool.
@@ -171,45 +157,20 @@ impl<C, E, M, H> Pool<C, E, M, H>
             internals.cond.signal();
         }
     }
-}
 
-fn helper_task<C, E, M, H>(receiver: Arc<Mutex<Receiver<Command<C>>>>,
-                           inner: Arc<InnerPool<C, E, M, H>>)
-        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
-    loop {
-        let receiver = receiver.lock();
-        let res = receiver.recv_opt();
-        drop(receiver);
-
-        match res {
-            Ok(Command::AddConnection) => add_connection(&*inner),
-            Ok(Command::TestConnection(conn)) => test_connection(&*inner, conn),
-            Err(()) => break,
-        }
-    }
-}
-
-fn add_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>)
-        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
-    match inner.manager.connect() {
-        Ok(conn) => {
-            let mut internals = inner.internals.lock();
-            internals.conns.push_back(conn);
-            internals.num_conns += 1;
-            internals.cond.signal();
-        }
-        Err(err) => inner.error_handler.handle_error(err),
-    }
-}
-
-fn test_connection<C, E, M, H>(inner: &InnerPool<C, E, M, H>, mut conn: C)
-        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
-    match inner.manager.is_valid(&mut conn) {
-        Ok(()) => inner.internals.lock().conns.push_back(conn),
-        Err(e) => {
-            inner.error_handler.handle_error(e);
-            inner.internals.lock().num_conns -= 1;
-        }
+    fn add_connection(&self) {
+        let inner = self.inner.clone();
+        self.task_pool.lock().execute(proc() {
+            match inner.manager.connect() {
+                Ok(conn) => {
+                    let mut internals = inner.internals.lock();
+                    internals.conns.push_back(conn);
+                    internals.num_conns += 1;
+                    internals.cond.signal();
+                }
+                Err(err) => inner.error_handler.handle_error(err),
+            }
+        });
     }
 }
 
