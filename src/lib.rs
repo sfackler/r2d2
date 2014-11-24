@@ -1,4 +1,5 @@
 //! A library providing a generic connection pool.
+
 #![feature(unsafe_destructor, phase, if_let)]
 #![warn(missing_docs)]
 #![doc(html_root_url="https://sfackler.github.io/doc")]
@@ -69,6 +70,7 @@ impl<E> ErrorHandler<E> for LoggingErrorHandler where E: fmt::Show {
 struct PoolInternals<C> {
     conns: RingBuf<C>,
     num_conns: uint,
+    task_pool: TaskPool,
 }
 
 struct InnerPool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
@@ -78,10 +80,26 @@ struct InnerPool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: Er
     internals: Mutex<PoolInternals<C>>,
 }
 
+fn add_connection<C, E, M, H>(inner: &Arc<InnerPool<C, E, M, H>>)
+        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
+    let new_inner = inner.clone();
+    inner.internals.lock().task_pool.execute(proc() {
+        let inner = new_inner;
+        match inner.manager.connect() {
+            Ok(conn) => {
+                let mut internals = inner.internals.lock();
+                internals.conns.push_back(conn);
+                internals.num_conns += 1;
+                internals.cond.signal();
+            }
+            Err(err) => inner.error_handler.handle_error(err),
+        }
+    });
+}
+
 /// A generic connection pool.
 pub struct Pool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     inner: Arc<InnerPool<C, E, M, H>>,
-    task_pool: Mutex<TaskPool>,
 }
 
 impl<C, E, M, H> Pool<C, E, M, H>
@@ -96,6 +114,7 @@ impl<C, E, M, H> Pool<C, E, M, H>
         let internals = PoolInternals {
             conns: RingBuf::new(),
             num_conns: config.pool_size,
+            task_pool: TaskPool::new(config.helper_tasks),
         };
 
         let inner = Arc::new(InnerPool {
@@ -105,16 +124,13 @@ impl<C, E, M, H> Pool<C, E, M, H>
             internals: Mutex::new(internals),
         });
 
-        let pool = Pool {
-            inner: inner,
-            task_pool: Mutex::new(TaskPool::new(config.helper_tasks)),
-        };
-
         for _ in range(0, config.pool_size) {
-            pool.add_connection();
+            add_connection(&inner);
         }
 
-        Ok(pool)
+        Ok(Pool {
+            inner: inner,
+        })
     }
 
     /// Retrieves a connection from the pool.
@@ -156,21 +172,6 @@ impl<C, E, M, H> Pool<C, E, M, H>
             internals.conns.push_back(conn);
             internals.cond.signal();
         }
-    }
-
-    fn add_connection(&self) {
-        let inner = self.inner.clone();
-        self.task_pool.lock().execute(proc() {
-            match inner.manager.connect() {
-                Ok(conn) => {
-                    let mut internals = inner.internals.lock();
-                    internals.conns.push_back(conn);
-                    internals.num_conns += 1;
-                    internals.cond.signal();
-                }
-                Err(err) => inner.error_handler.handle_error(err),
-            }
-        });
     }
 }
 
