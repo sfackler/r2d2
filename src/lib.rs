@@ -1,6 +1,6 @@
 //! A library providing a generic connection pool.
 
-#![feature(unsafe_destructor, phase, if_let)]
+#![feature(unsafe_destructor, phase)]
 #![warn(missing_docs)]
 #![doc(html_root_url="https://sfackler.github.io/doc")]
 
@@ -9,7 +9,7 @@ extern crate log;
 extern crate serialize;
 
 use std::collections::RingBuf;
-use std::sync::{Arc, Mutex, TaskPool};
+use std::sync::{Arc, Mutex, Condvar, TaskPool};
 use std::fmt;
 
 pub use config::{Config, ConfigError};
@@ -78,6 +78,7 @@ struct InnerPool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: Er
     manager: M,
     error_handler: H,
     internals: Mutex<PoolInternals<C>>,
+    cond: Condvar,
 }
 
 fn add_connection<C, E, M, H>(inner: &Arc<InnerPool<C, E, M, H>>)
@@ -90,7 +91,7 @@ fn add_connection<C, E, M, H>(inner: &Arc<InnerPool<C, E, M, H>>)
                 let mut internals = inner.internals.lock();
                 internals.conns.push_back(conn);
                 internals.num_conns += 1;
-                internals.cond.signal();
+                inner.cond.notify_one();
             }
             Err(err) => inner.error_handler.handle_error(err),
         }
@@ -122,6 +123,7 @@ impl<C, E, M, H> Pool<C, E, M, H>
             manager: manager,
             error_handler: error_handler,
             internals: Mutex::new(internals),
+            cond: Condvar::new(),
         });
 
         for _ in range(0, config.pool_size) {
@@ -156,7 +158,7 @@ impl<C, E, M, H> Pool<C, E, M, H>
                         conn: Some(conn),
                     })
                 }
-                None => internals.cond.wait(),
+                None => self.inner.cond.wait(&internals),
             }
         }
     }
@@ -170,7 +172,7 @@ impl<C, E, M, H> Pool<C, E, M, H>
             internals.num_conns -= 1;
         } else {
             internals.conns.push_back(conn);
-            internals.cond.signal();
+            self.inner.cond.notify_one();
         }
     }
 }
