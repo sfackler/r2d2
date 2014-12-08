@@ -45,7 +45,7 @@ pub trait ErrorHandler<E>: Send+Sync {
     fn handle_error(&self, error: E);
 }
 
-impl<E> ErrorHandler<E> for Box<ErrorHandler<E>+Sync+Send> {
+impl<E> ErrorHandler<E> for Box<ErrorHandler<E>> {
     fn handle_error(&self, error: E) {
         (**self).handle_error(error)
     }

@@ -179,7 +179,7 @@ fn test_drop_on_broken() {
 // Just make sure that a boxed error handler works and doesn't self recurse or anything
 #[test]
 fn test_boxed_error_handler() {
-    let handler: Box<ErrorHandler<()>+Send+Sync> = box r2d2::NoopErrorHandler;
+    let handler: Box<ErrorHandler<()>> = box r2d2::NoopErrorHandler;
     handler.handle_error(());
     r2d2::Pool::new(Default::default(), OkManager, handler).unwrap();
 }
