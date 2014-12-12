@@ -7,7 +7,7 @@ pub use self::ConfigError::{ZeroPoolSize, ZeroHelperTasks};
 ///
 /// `Config` implements `Default`, which provides a set of reasonable default
 /// values.
-#[deriving(Encodable, Decodable)]
+#[deriving(Encodable, Decodable, Copy, Clone)]
 pub struct Config {
     /// The number of connections managed by the pool.
     ///
@@ -55,7 +55,7 @@ impl Config {
 }
 
 /// An enumeration of reasons that a `Config` is invalid
-#[deriving(Clone, PartialEq, Eq)]
+#[deriving(Copy, Clone, PartialEq, Eq)]
 pub enum ConfigError {
     /// pool_size was zero
     ZeroPoolSize,

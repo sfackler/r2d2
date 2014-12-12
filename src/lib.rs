@@ -52,6 +52,7 @@ impl<E> ErrorHandler<E> for Box<ErrorHandler<E>> {
 }
 
 /// An `ErrorHandler` which does nothing.
+#[deriving(Copy)]
 pub struct NoopErrorHandler;
 
 impl<E> ErrorHandler<E> for NoopErrorHandler {
@@ -59,6 +60,7 @@ impl<E> ErrorHandler<E> for NoopErrorHandler {
 }
 
 /// An `ErrorHandler` which logs at the error level.
+#[deriving(Copy)]
 pub struct LoggingErrorHandler;
 
 impl<E> ErrorHandler<E> for LoggingErrorHandler where E: fmt::Show {
