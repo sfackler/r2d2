@@ -1,7 +1,6 @@
 use std::default::Default;
 use std::fmt;
-
-pub use self::ConfigError::{ZeroPoolSize, ZeroHelperTasks};
+use std::error::Error;
 
 /// A struct specifying the runtime configuration of a pool.
 ///
@@ -43,11 +42,11 @@ impl Config {
     /// Determines if the configuration is valid
     pub fn validate(&self) -> Result<(), ConfigError> {
         if self.pool_size == 0 {
-            return Err(ZeroPoolSize);
+            return Err(ConfigError::ZeroPoolSize);
         }
 
         if self.helper_tasks == 0 {
-            return Err(ZeroHelperTasks);
+            return Err(ConfigError::ZeroHelperTasks);
         }
 
         Ok(())
@@ -65,9 +64,15 @@ pub enum ConfigError {
 
 impl fmt::Show for ConfigError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{}", self.description())
+    }
+}
+
+impl Error for ConfigError {
+    fn description(&self) -> &str {
         match *self {
-            ZeroPoolSize => write!(fmt, "pool_size must be positive"),
-            ZeroHelperTasks => write!(fmt, "helper_tasks must be positive"),
+            ConfigError::ZeroPoolSize => "pool_size must be positive",
+            ConfigError::ZeroHelperTasks => "helper_tasks must be positive",
         }
     }
 }
