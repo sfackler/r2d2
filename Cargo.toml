@@ -17,3 +17,6 @@ test = false
 [[test]]
 name = "test"
 path = "tests/test.rs"
+
+[dependencies]
+log = "0.1"
