@@ -6,7 +6,6 @@
 
 #[phase(plugin, link)]
 extern crate log;
-extern crate serialize;
 
 use std::collections::RingBuf;
 use std::sync::{Arc, Mutex, Condvar, TaskPool};

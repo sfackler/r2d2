@@ -6,7 +6,7 @@ use std::error::Error;
 ///
 /// `Config` implements `Default`, which provides a set of reasonable default
 /// values.
-#[deriving(Encodable, Decodable, Copy, Clone)]
+#[deriving(Copy, Clone)]
 pub struct Config {
     /// The number of connections managed by the pool.
     ///
