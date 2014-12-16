@@ -130,7 +130,7 @@ fn test_issue_2_unlocked_during_is_valid() {
     let pool = Arc::new(r2d2::Pool::new(config, manager, r2d2::NoopErrorHandler).unwrap());
 
     let p2 = pool.clone();
-    spawn(proc() {
+    spawn(move || {
         p2.get().unwrap();
     });
 

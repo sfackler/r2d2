@@ -85,7 +85,7 @@ struct InnerPool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: Er
 fn add_connection<C, E, M, H>(inner: &Arc<InnerPool<C, E, M, H>>)
         where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     let new_inner = inner.clone();
-    inner.internals.lock().task_pool.execute(proc() {
+    inner.internals.lock().task_pool.execute(move || {
         let inner = new_inner;
         match inner.manager.connect() {
             Ok(conn) => {
