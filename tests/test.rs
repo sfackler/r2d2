@@ -4,6 +4,7 @@ use std::comm;
 use std::sync::{Mutex, Arc};
 use std::sync::atomic::{AtomicBool, INIT_ATOMIC_BOOL, SeqCst};
 use std::default::Default;
+use std::thread::Thread;
 
 use r2d2::ErrorHandler;
 
@@ -130,7 +131,7 @@ fn test_issue_2_unlocked_during_is_valid() {
     let pool = Arc::new(r2d2::Pool::new(config, manager, r2d2::NoopErrorHandler).unwrap());
 
     let p2 = pool.clone();
-    spawn(move || {
+    let _t = Thread::spawn(move || {
         p2.get().unwrap();
     });
 
