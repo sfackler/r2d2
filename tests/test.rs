@@ -133,7 +133,7 @@ fn test_issue_2_unlocked_during_is_valid() {
     let p2 = pool.clone();
     let _t = Thread::spawn(move || {
         p2.get().unwrap();
-    });
+    }).detach();
 
     r1.recv();
     // get call by other task has triggered the health check

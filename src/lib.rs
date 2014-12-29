@@ -74,6 +74,8 @@ struct PoolInternals<C> {
     task_pool: TaskPool,
 }
 
+unsafe impl<C: Send> Send for PoolInternals<C> {}
+
 struct InnerPool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     config: Config,
     manager: M,
