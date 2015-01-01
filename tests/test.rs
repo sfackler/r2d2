@@ -35,7 +35,7 @@ struct NthConnectFailManager {
 
 impl r2d2::PoolManager<FakeConnection, ()> for NthConnectFailManager {
     fn connect(&self) -> Result<FakeConnection, ()> {
-        let mut n = self.n.lock();
+        let mut n = self.n.lock().unwrap();
         if *n > 0 {
             *n -= 1;
             Ok(FakeConnection)
@@ -104,8 +104,8 @@ fn test_issue_2_unlocked_during_is_valid() {
 
         fn is_valid(&self, _: &mut FakeConnection) -> Result<(), ()> {
             if self.first.compare_and_swap(true, false, SeqCst) {
-                self.s.lock().send(());
-                self.r.lock().recv();
+                self.s.lock().unwrap().send(());
+                self.r.lock().unwrap().recv();
             }
             Ok(())
         }

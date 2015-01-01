@@ -87,11 +87,11 @@ struct InnerPool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: Er
 fn add_connection<C, E, M, H>(inner: &Arc<InnerPool<C, E, M, H>>)
         where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     let new_inner = inner.clone();
-    inner.internals.lock().task_pool.execute(move || {
+    inner.internals.lock().unwrap().task_pool.execute(move || {
         let inner = new_inner;
         match inner.manager.connect() {
             Ok(conn) => {
-                let mut internals = inner.internals.lock();
+                let mut internals = inner.internals.lock().unwrap();
                 internals.conns.push_back(conn);
                 internals.num_conns += 1;
                 inner.cond.notify_one();
@@ -140,7 +140,7 @@ impl<C, E, M, H> Pool<C, E, M, H>
 
     /// Retrieves a connection from the pool.
     pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, C, E, M, H>, ()> {
-        let mut internals = self.inner.internals.lock();
+        let mut internals = self.inner.internals.lock().unwrap();
 
         loop {
             match internals.conns.pop_front() {
@@ -150,7 +150,7 @@ impl<C, E, M, H> Pool<C, E, M, H>
                     if self.inner.config.test_on_check_out {
                         if let Err(e) = self.inner.manager.is_valid(&mut conn) {
                             self.inner.error_handler.handle_error(e);
-                            internals = self.inner.internals.lock();
+                            internals = self.inner.internals.lock().unwrap();
                             internals.num_conns -= 1;
                             continue
                         }
@@ -161,7 +161,9 @@ impl<C, E, M, H> Pool<C, E, M, H>
                         conn: Some(conn),
                     })
                 }
-                None => self.inner.cond.wait(&internals),
+                None => {
+                    internals = self.inner.cond.wait(internals).unwrap();
+                }
             }
         }
     }
@@ -170,7 +172,7 @@ impl<C, E, M, H> Pool<C, E, M, H>
         // This is specified to be fast, but call it before locking anyways
         let broken = self.inner.manager.has_broken(&mut conn);
 
-        let mut internals = self.inner.internals.lock();
+        let mut internals = self.inner.internals.lock().unwrap();
         if broken {
             internals.num_conns -= 1;
         } else {
