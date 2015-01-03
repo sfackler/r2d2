@@ -1,8 +1,8 @@
 extern crate r2d2;
 
-use std::comm;
 use std::sync::{Mutex, Arc};
-use std::sync::atomic::{AtomicBool, INIT_ATOMIC_BOOL, SeqCst};
+use std::sync::mpsc::{self, SyncSender, Receiver};
+use std::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, SeqCst};
 use std::default::Default;
 use std::thread::Thread;
 
@@ -10,7 +10,7 @@ use r2d2::ErrorHandler;
 
 mod config;
 
-#[deriving(Show, PartialEq)]
+#[derive(Show, PartialEq)]
 struct FakeConnection;
 
 struct OkManager;
@@ -104,8 +104,8 @@ fn test_issue_2_unlocked_during_is_valid() {
 
         fn is_valid(&self, _: &mut FakeConnection) -> Result<(), ()> {
             if self.first.compare_and_swap(true, false, SeqCst) {
-                self.s.lock().unwrap().send(());
-                self.r.lock().unwrap().recv();
+                self.s.lock().unwrap().send(()).unwrap();
+                self.r.lock().unwrap().recv().unwrap();
             }
             Ok(())
         }
@@ -115,8 +115,8 @@ fn test_issue_2_unlocked_during_is_valid() {
         }
     }
 
-    let (s1, r1) = comm::sync_channel(0);
-    let (s2, r2) = comm::sync_channel(0);
+    let (s1, r1) = mpsc::sync_channel(0);
+    let (s2, r2) = mpsc::sync_channel(0);
 
     let config = r2d2::Config {
         test_on_check_out: true,
@@ -135,15 +135,15 @@ fn test_issue_2_unlocked_during_is_valid() {
         p2.get().unwrap();
     }).detach();
 
-    r1.recv();
+    r1.recv().unwrap();
     // get call by other task has triggered the health check
     pool.get().unwrap();
-    s2.send(());
+    s2.send(()).unwrap();
 }
 
 #[test]
 fn test_drop_on_broken() {
-    static DROPPED: AtomicBool = INIT_ATOMIC_BOOL;
+    static DROPPED: AtomicBool = ATOMIC_BOOL_INIT;
     DROPPED.store(false, SeqCst);
 
     struct Connection;

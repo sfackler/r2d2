@@ -1,6 +1,6 @@
 //! A library providing a generic connection pool.
 
-#![feature(unsafe_destructor, phase)]
+#![feature(unsafe_destructor, phase, associated_types)]
 #![warn(missing_docs)]
 #![doc(html_root_url="https://sfackler.github.io/doc")]
 
@@ -8,6 +8,7 @@
 extern crate log;
 
 use std::collections::RingBuf;
+use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex, Condvar, TaskPool};
 use std::fmt;
 
@@ -51,7 +52,7 @@ impl<E> ErrorHandler<E> for Box<ErrorHandler<E>> {
 }
 
 /// An `ErrorHandler` which does nothing.
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct NoopErrorHandler;
 
 impl<E> ErrorHandler<E> for NoopErrorHandler {
@@ -59,7 +60,7 @@ impl<E> ErrorHandler<E> for NoopErrorHandler {
 }
 
 /// An `ErrorHandler` which logs at the error level.
-#[deriving(Copy)]
+#[derive(Copy)]
 pub struct LoggingErrorHandler;
 
 impl<E> ErrorHandler<E> for LoggingErrorHandler where E: fmt::Show {
@@ -197,14 +198,16 @@ impl<'a, C, E, M, H> Drop for PooledConnection<'a, C, E, M, H>
     }
 }
 
-impl<'a, C, E, M, H> Deref<C> for PooledConnection<'a, C, E, M, H>
+impl<'a, C, E, M, H> Deref for PooledConnection<'a, C, E, M, H>
         where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
+    type Target = C;
+
     fn deref(&self) -> &C {
         self.conn.as_ref().unwrap()
     }
 }
 
-impl<'a, C, E, M, H> DerefMut<C> for PooledConnection<'a, C, E, M, H>
+impl<'a, C, E, M, H> DerefMut for PooledConnection<'a, C, E, M, H>
         where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     fn deref_mut(&mut self) -> &mut C {
         self.conn.as_mut().unwrap()
