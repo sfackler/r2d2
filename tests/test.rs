@@ -2,7 +2,7 @@ extern crate r2d2;
 
 use std::sync::{Mutex, Arc};
 use std::sync::mpsc::{self, SyncSender, Receiver};
-use std::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, SeqCst};
+use std::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, Ordering};
 use std::default::Default;
 use std::thread::Thread;
 
@@ -103,7 +103,7 @@ fn test_issue_2_unlocked_during_is_valid() {
         }
 
         fn is_valid(&self, _: &mut FakeConnection) -> Result<(), ()> {
-            if self.first.compare_and_swap(true, false, SeqCst) {
+            if self.first.compare_and_swap(true, false, Ordering::SeqCst) {
                 self.s.lock().unwrap().send(()).unwrap();
                 self.r.lock().unwrap().recv().unwrap();
             }
@@ -144,13 +144,13 @@ fn test_issue_2_unlocked_during_is_valid() {
 #[test]
 fn test_drop_on_broken() {
     static DROPPED: AtomicBool = ATOMIC_BOOL_INIT;
-    DROPPED.store(false, SeqCst);
+    DROPPED.store(false, Ordering::SeqCst);
 
     struct Connection;
 
     impl Drop for Connection {
         fn drop(&mut self) {
-            DROPPED.store(true, SeqCst);
+            DROPPED.store(true, Ordering::SeqCst);
         }
     }
 
@@ -174,7 +174,7 @@ fn test_drop_on_broken() {
 
     drop(pool.get().unwrap());
 
-    assert!(DROPPED.load(SeqCst));
+    assert!(DROPPED.load(Ordering::SeqCst));
 }
 
 // Just make sure that a boxed error handler works and doesn't self recurse or anything
