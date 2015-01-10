@@ -52,7 +52,7 @@ impl<E> ErrorHandler<E> for Box<ErrorHandler<E>> {
 }
 
 /// An `ErrorHandler` which does nothing.
-#[derive(Copy)]
+#[derive(Copy, Clone, Show)]
 pub struct NoopErrorHandler;
 
 impl<E> ErrorHandler<E> for NoopErrorHandler {
@@ -60,7 +60,7 @@ impl<E> ErrorHandler<E> for NoopErrorHandler {
 }
 
 /// An `ErrorHandler` which logs at the error level.
-#[derive(Copy)]
+#[derive(Copy, Clone, Show)]
 pub struct LoggingErrorHandler;
 
 impl<E> ErrorHandler<E> for LoggingErrorHandler where E: fmt::Show {
@@ -105,6 +105,14 @@ fn add_connection<C, E, M, H>(inner: &Arc<InnerPool<C, E, M, H>>)
 /// A generic connection pool.
 pub struct Pool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     inner: Arc<InnerPool<C, E, M, H>>,
+}
+
+impl<C, E, M, H> fmt::Show for Pool<C, E, M, H>
+        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
+    // FIXME there's more we can do here
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "Pool {{ config: {:?} }}", self.inner.config)
+    }
 }
 
 impl<C, E, M, H> Pool<C, E, M, H>
@@ -188,6 +196,14 @@ pub struct PooledConnection<'a, C, E, M, H>
         where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     pool: &'a Pool<C, E, M, H>,
     conn: Option<C>,
+}
+
+impl<'a, C, E, M, H> fmt::Show for PooledConnection<'a, C, E, M, H>
+        where C: Send+fmt::Show, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "PooledConnection {{ pool: {:?}, connection: {:?} }}", self.pool,
+               self.conn.as_ref().unwrap())
+    }
 }
 
 #[unsafe_destructor]

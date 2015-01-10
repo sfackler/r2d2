@@ -6,7 +6,7 @@ use std::error::Error;
 ///
 /// `Config` implements `Default`, which provides a set of reasonable default
 /// values.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Show)]
 pub struct Config {
     /// The number of connections managed by the pool.
     ///
@@ -54,7 +54,7 @@ impl Config {
 }
 
 /// An enumeration of reasons that a `Config` is invalid
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Show)]
 pub enum ConfigError {
     /// pool_size was zero
     ZeroPoolSize,
@@ -62,7 +62,7 @@ pub enum ConfigError {
     ZeroHelperTasks,
 }
 
-impl fmt::Show for ConfigError {
+impl fmt::String for ConfigError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(fmt, "{}", self.description())
     }
