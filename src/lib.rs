@@ -108,10 +108,11 @@ pub struct Pool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: Err
 }
 
 impl<C, E, M, H> fmt::Show for Pool<C, E, M, H>
-        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
+        where C: Send, E: Send, M: PoolManager<C, E>+fmt::Show, H: ErrorHandler<E> {
     // FIXME there's more we can do here
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "Pool {{ config: {:?} }}", self.inner.config)
+        write!(fmt, "Pool {{ config: {:?}, manager: {:?} }}", self.inner.config,
+               self.inner.manager)
     }
 }
 
@@ -199,7 +200,7 @@ pub struct PooledConnection<'a, C, E, M, H>
 }
 
 impl<'a, C, E, M, H> fmt::Show for PooledConnection<'a, C, E, M, H>
-        where C: Send+fmt::Show, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
+        where C: Send+fmt::Show, E: Send, M: PoolManager<C, E>+fmt::Show, H: ErrorHandler<E> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(fmt, "PooledConnection {{ pool: {:?}, connection: {:?} }}", self.pool,
                self.conn.as_ref().unwrap())
