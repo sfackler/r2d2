@@ -1,6 +1,7 @@
 //! A library providing a generic connection pool.
 #![feature(unsafe_destructor)]
 #![warn(missing_docs)]
+#![allow(unstable)]
 #![doc(html_root_url="https://sfackler.github.io/doc")]
 
 #[macro_use]
@@ -64,13 +65,13 @@ pub struct LoggingErrorHandler;
 
 impl<E> ErrorHandler<E> for LoggingErrorHandler where E: fmt::Show {
     fn handle_error(&self, error: E) {
-        error!("{}", error);
+        error!("{:?}", error);
     }
 }
 
 struct PoolInternals<C> {
     conns: RingBuf<C>,
-    num_conns: uint,
+    num_conns: u32,
     task_pool: TaskPool,
 }
 
@@ -118,7 +119,7 @@ impl<C, E, M, H> Pool<C, E, M, H>
         let internals = PoolInternals {
             conns: RingBuf::new(),
             num_conns: config.pool_size,
-            task_pool: TaskPool::new(config.helper_tasks),
+            task_pool: TaskPool::new(config.helper_tasks as usize),
         };
 
         let inner = Arc::new(InnerPool {

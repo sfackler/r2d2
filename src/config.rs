@@ -13,14 +13,14 @@ pub struct Config {
     /// Must be positive.
     ///
     /// Defaults to 10.
-    pub pool_size: uint,
+    pub pool_size: u32,
     /// The number of tasks that the pool will use for asynchronous operations
     /// such as connection creation and health checks.
     ///
     /// Must be positive.
     ///
     /// Defaults to 3.
-    pub helper_tasks: uint,
+    pub helper_tasks: u32,
     /// If true, the health of a connection will be verified via a call to
     /// `PoolManager::is_valid` before it is checked out of the pool.
     ///

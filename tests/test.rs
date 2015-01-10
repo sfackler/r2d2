@@ -1,3 +1,4 @@
+#![allow(unstable)]
 extern crate r2d2;
 
 use std::sync::{Mutex, Arc};
@@ -30,7 +31,7 @@ impl r2d2::PoolManager<FakeConnection, ()> for OkManager {
 }
 
 struct NthConnectFailManager {
-    n: Mutex<uint>,
+    n: Mutex<u32>,
 }
 
 impl r2d2::PoolManager<FakeConnection, ()> for NthConnectFailManager {
@@ -131,9 +132,9 @@ fn test_issue_2_unlocked_during_is_valid() {
     let pool = Arc::new(r2d2::Pool::new(config, manager, r2d2::NoopErrorHandler).unwrap());
 
     let p2 = pool.clone();
-    let _t = Thread::spawn(move || {
+    let _t = Thread::scoped(move || {
         p2.get().unwrap();
-    }).detach();
+    });
 
     r1.recv().unwrap();
     // get call by other task has triggered the health check
@@ -180,7 +181,7 @@ fn test_drop_on_broken() {
 // Just make sure that a boxed error handler works and doesn't self recurse or anything
 #[test]
 fn test_boxed_error_handler() {
-    let handler: Box<ErrorHandler<()>> = box r2d2::NoopErrorHandler;
+    let handler: Box<ErrorHandler<()>> = Box::new(r2d2::NoopErrorHandler);
     handler.handle_error(());
     r2d2::Pool::new(Default::default(), OkManager, handler).unwrap();
 }
