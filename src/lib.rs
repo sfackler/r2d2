@@ -6,6 +6,7 @@
 
 #[macro_use]
 extern crate log;
+extern crate time;
 
 use std::collections::RingBuf;
 use std::ops::{Deref, DerefMut};
@@ -15,6 +16,7 @@ use std::fmt;
 pub use config::{Config, ConfigError};
 
 mod config;
+mod task;
 
 /// A trait which provides database-specific functionality.
 pub trait PoolManager<C, E>: Send+Sync {

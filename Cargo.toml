@@ -9,14 +9,10 @@ documentation = "https://sfackler.github.io/doc/r2d2"
 readme = "README.md"
 keywords = ["database", "pool"]
 
-[lib]
-name = "r2d2"
-path = "src/lib.rs"
-test = false
-
 [[test]]
 name = "test"
 path = "tests/test.rs"
 
 [dependencies]
 log = "0.1"
+time = "0.1"
