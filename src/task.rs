@@ -7,8 +7,16 @@ use std::time::Duration;
 
 use time;
 
+enum JobType {
+    Once(Thunk),
+    FixedRate {
+        f: Box<FnMut() + Send>,
+        rate: Duration,
+    },
+}
+
 struct Job {
-    thunk: Thunk,
+    type_: JobType,
     time: u64,
 }
 
@@ -41,6 +49,24 @@ struct InnerPool {
 struct SharedPool {
     inner: Mutex<InnerPool>,
     cvar: Condvar,
+}
+
+impl SharedPool {
+    fn execute(&self, job: Job) {
+        let mut inner = self.inner.lock().unwrap();
+
+        // Calls from the pool itself will never hit this, but calls from workers might
+        if inner.shutdown {
+            return;
+        }
+
+        match inner.queue.peek() {
+            None => self.cvar.notify_all(),
+            Some(e) if e.time > job.time => self.cvar.notify_all(),
+            _ => {}
+        };
+        inner.queue.push(job);
+    }
 }
 
 pub struct ScheduledTaskPool {
@@ -89,16 +115,18 @@ impl ScheduledTaskPool {
 
     pub fn execute_after<F>(&self, dur: Duration, f: F) where F: FnOnce() + Send {
         let job = Job {
-            thunk: Thunk::new(f),
+            type_: JobType::Once(Thunk::new(f)),
             time: (time::precise_time_ns() as i64 + dur.num_nanoseconds().unwrap()) as u64,
         };
-        let mut inner = self.shared.inner.lock().unwrap();
-        match inner.queue.peek() {
-            None => self.shared.cvar.notify_all(),
-            Some(e) if e.time > job.time => self.shared.cvar.notify_all(),
-            _ => {}
+        self.shared.execute(job)
+    }
+
+    pub fn execute_at_fixed_rate<F>(&self, rate: Duration, f: F) where F: FnMut() + Send {
+        let job = Job {
+            type_: JobType::FixedRate { f: Box::new(f), rate: rate },
+            time: (time::precise_time_ns() as i64 + rate.num_nanoseconds().unwrap()) as u64,
         };
-        inner.queue.push(job);
+        self.shared.execute(job)
     }
 }
 
@@ -122,7 +150,7 @@ impl Worker {
     fn run(&mut self) {
         loop {
             match self.get_job() {
-                Some(job) => job.thunk.invoke(()),
+                Some(job) => self.run_job(job),
                 None => break,
             }
         }
@@ -152,6 +180,20 @@ impl Worker {
         }
 
         Some(inner.queue.pop().unwrap())
+    }
+
+    fn run_job(&self, job: Job) {
+        match job.type_ {
+            JobType::Once(f) => f.invoke(()),
+            JobType::FixedRate { mut f, rate } => {
+                f();
+                let new_job = Job {
+                    type_: JobType::FixedRate { f: f, rate: rate },
+                    time: (job.time as i64 + rate.num_nanoseconds().unwrap()) as u64,
+                };
+                self.shared.execute(new_job)
+            }
+        }
     }
 }
 
@@ -242,5 +284,30 @@ mod test {
 
         assert_eq!(2, rx.recv().unwrap());
         assert_eq!(1, rx.recv().unwrap());
+    }
+
+    #[test]
+    fn test_fixed_delay_jobs_stop_after_drop() {
+        let pool = Arc::new(ScheduledTaskPool::new(TEST_TASKS));
+        let (tx, rx) = channel();
+        let (tx2, rx2) = channel();
+
+        let mut pool2 = Some(pool.clone());
+        let mut i = 0i32;
+        pool.execute_at_fixed_rate(Duration::milliseconds(500), move || {
+            i += 1;
+            tx.send(i).unwrap();
+            rx2.recv().unwrap();
+            if i == 2 {
+                drop(pool2.take().unwrap());
+            }
+        });
+        drop(pool);
+
+        assert_eq!(Ok(1), rx.recv());
+        tx2.send(()).unwrap();
+        assert_eq!(Ok(2), rx.recv());
+        tx2.send(()).unwrap();
+        assert!(rx.recv().is_err());
     }
 }
