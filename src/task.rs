@@ -69,6 +69,10 @@ impl SharedPool {
     }
 }
 
+/// A fixed-size thread pool which allows jobs to be scheduled in the future.
+///
+/// When the pool falls out of scope, all pending tasks will be executed, after
+/// which the worker threads will shut down.
 pub struct ScheduledTaskPool {
     shared: Arc<SharedPool>,
 }
@@ -81,6 +85,11 @@ impl Drop for ScheduledTaskPool {
 }
 
 impl ScheduledTaskPool {
+    /// Creates a new `ScheduledTaskPool` with the specified number of threads.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `size` is 0.
     pub fn new(size: usize) -> ScheduledTaskPool {
         assert!(size > 0, "size must be positive");
 
@@ -109,24 +118,38 @@ impl ScheduledTaskPool {
         pool
     }
 
-    pub fn run<F>(&self, f: F) where F: FnOnce() + Send {
+    /// Asynchronously executes `job` with no added delay.
+    pub fn run<F>(&self, job: F) where F: FnOnce() + Send {
         self.run_after(Duration::zero(), f)
     }
 
-    pub fn run_after<F>(&self, dur: Duration, f: F) where F: FnOnce() + Send {
+    /// Asynchronously executes `job` after the specified delay.
+    pub fn run_after<F>(&self, dur: Duration, job: F) where F: FnOnce() + Send {
         let job = Job {
-            type_: JobType::Once(Thunk::new(f)),
+            type_: JobType::Once(Thunk::new(job)),
             time: (time::precise_time_ns() as i64 + dur.num_nanoseconds().unwrap()) as u64,
         };
         self.shared.run(job)
     }
 
+    /// Asynchronously executes `job` repeatedly at the specified rate.
+    ///
+    /// If the job panics, it will no longer be executed. When the pool is
+    /// destroyed, the job will no longer be rescheduled for execution, but any
+    /// pending execution of the job will be handled as a normal job would.
     pub fn run_at_fixed_rate<F>(&self, rate: Duration, f: F) where F: FnMut() + Send {
         let job = Job {
             type_: JobType::FixedRate { f: Box::new(f), rate: rate },
             time: (time::precise_time_ns() as i64 + rate.num_nanoseconds().unwrap()) as u64,
         };
         self.shared.run(job)
+    }
+
+    /// Consumes the `ScheduledTaskPool`, canceling any pending jobs.
+    ///
+    /// Currently running jobs will continue to run to completion.
+    pub fn shutdown_now(self) {
+        self.shared.inner.lock().unwrap().queue.clear();
     }
 }
 
