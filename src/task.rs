@@ -120,7 +120,7 @@ impl ScheduledTaskPool {
 
     /// Asynchronously executes `job` with no added delay.
     pub fn run<F>(&self, job: F) where F: FnOnce() + Send {
-        self.run_after(Duration::zero(), f)
+        self.run_after(Duration::zero(), job)
     }
 
     /// Asynchronously executes `job` after the specified delay.
