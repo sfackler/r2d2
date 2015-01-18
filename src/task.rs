@@ -52,7 +52,7 @@ struct SharedPool {
 }
 
 impl SharedPool {
-    fn execute(&self, job: Job) {
+    fn run(&self, job: Job) {
         let mut inner = self.inner.lock().unwrap();
 
         // Calls from the pool itself will never hit this, but calls from workers might
@@ -109,24 +109,24 @@ impl ScheduledTaskPool {
         pool
     }
 
-    pub fn execute<F>(&self, f: F) where F: FnOnce() + Send {
-        self.execute_after(Duration::zero(), f)
+    pub fn run<F>(&self, f: F) where F: FnOnce() + Send {
+        self.run_after(Duration::zero(), f)
     }
 
-    pub fn execute_after<F>(&self, dur: Duration, f: F) where F: FnOnce() + Send {
+    pub fn run_after<F>(&self, dur: Duration, f: F) where F: FnOnce() + Send {
         let job = Job {
             type_: JobType::Once(Thunk::new(f)),
             time: (time::precise_time_ns() as i64 + dur.num_nanoseconds().unwrap()) as u64,
         };
-        self.shared.execute(job)
+        self.shared.run(job)
     }
 
-    pub fn execute_at_fixed_rate<F>(&self, rate: Duration, f: F) where F: FnMut() + Send {
+    pub fn run_at_fixed_rate<F>(&self, rate: Duration, f: F) where F: FnMut() + Send {
         let job = Job {
             type_: JobType::FixedRate { f: Box::new(f), rate: rate },
             time: (time::precise_time_ns() as i64 + rate.num_nanoseconds().unwrap()) as u64,
         };
-        self.shared.execute(job)
+        self.shared.run(job)
     }
 }
 
@@ -191,7 +191,7 @@ impl Worker {
                     type_: JobType::FixedRate { f: f, rate: rate },
                     time: (job.time as i64 + rate.num_nanoseconds().unwrap()) as u64,
                 };
-                self.shared.execute(new_job)
+                self.shared.run(new_job)
             }
         }
     }
@@ -215,7 +215,7 @@ mod test {
         let (tx, rx) = channel();
         for _ in range(0, TEST_TASKS) {
             let tx = tx.clone();
-            pool.execute(move|| {
+            pool.run(move|| {
                 tx.send(1us).unwrap();
             });
         }
@@ -237,7 +237,7 @@ mod test {
         let waiter = Arc::new(Barrier::new(TEST_TASKS as usize));
         for _ in range(0, TEST_TASKS) {
             let waiter = waiter.clone();
-            pool.execute(move || -> () {
+            pool.run(move || -> () {
                 waiter.wait();
                 panic!();
             });
@@ -249,7 +249,7 @@ mod test {
         for _ in range(0, TEST_TASKS) {
             let tx = tx.clone();
             let waiter = waiter.clone();
-            pool.execute(move || {
+            pool.run(move || {
                 waiter.wait();
                 tx.send(1us).unwrap();
             });
@@ -259,13 +259,13 @@ mod test {
     }
 
     #[test]
-    fn test_execute_after() {
+    fn test_run_after() {
         let pool = ScheduledTaskPool::new(TEST_TASKS);
         let (tx, rx) = channel();
 
         let tx1 = tx.clone();
-        pool.execute_after(Duration::seconds(1), move || tx1.send(1us).unwrap());
-        pool.execute_after(Duration::milliseconds(500), move || tx.send(2us).unwrap());
+        pool.run_after(Duration::seconds(1), move || tx1.send(1us).unwrap());
+        pool.run_after(Duration::milliseconds(500), move || tx.send(2us).unwrap());
 
         assert_eq!(2, rx.recv().unwrap());
         assert_eq!(1, rx.recv().unwrap());
@@ -277,8 +277,8 @@ mod test {
         let (tx, rx) = channel();
 
         let tx1 = tx.clone();
-        pool.execute_after(Duration::seconds(1), move || tx1.send(1us).unwrap());
-        pool.execute_after(Duration::milliseconds(500), move || tx.send(2us).unwrap());
+        pool.run_after(Duration::seconds(1), move || tx1.send(1us).unwrap());
+        pool.run_after(Duration::milliseconds(500), move || tx.send(2us).unwrap());
 
         drop(pool);
 
@@ -294,7 +294,7 @@ mod test {
 
         let mut pool2 = Some(pool.clone());
         let mut i = 0i32;
-        pool.execute_at_fixed_rate(Duration::milliseconds(500), move || {
+        pool.run_at_fixed_rate(Duration::milliseconds(500), move || {
             i += 1;
             tx.send(i).unwrap();
             rx2.recv().unwrap();
