@@ -73,24 +73,24 @@ impl SharedPool {
 ///
 /// When the pool falls out of scope, all pending tasks will be executed, after
 /// which the worker threads will shut down.
-pub struct ScheduledTaskPool {
+pub struct ScheduledThreadPool {
     shared: Arc<SharedPool>,
 }
 
-impl Drop for ScheduledTaskPool {
+impl Drop for ScheduledThreadPool {
     fn drop(&mut self) {
         self.shared.inner.lock().unwrap().shutdown = true;
         self.shared.cvar.notify_all();
     }
 }
 
-impl ScheduledTaskPool {
-    /// Creates a new `ScheduledTaskPool` with the specified number of threads.
+impl ScheduledThreadPool {
+    /// Creates a new `ScheduledThreadPool` with the specified number of threads.
     ///
     /// # Panics
     ///
     /// Panics if `size` is 0.
-    pub fn new(size: usize) -> ScheduledTaskPool {
+    pub fn new(size: usize) -> ScheduledThreadPool {
         assert!(size > 0, "size must be positive");
 
         let inner = InnerPool {
@@ -103,7 +103,7 @@ impl ScheduledTaskPool {
             cvar: Condvar::new(),
         };
 
-        let pool = ScheduledTaskPool {
+        let pool = ScheduledThreadPool {
             shared: Arc::new(shared),
         };
 
@@ -145,7 +145,7 @@ impl ScheduledTaskPool {
         self.shared.run(job)
     }
 
-    /// Consumes the `ScheduledTaskPool`, canceling any pending jobs.
+    /// Consumes the `ScheduledThreadPool`, canceling any pending jobs.
     ///
     /// Currently running jobs will continue to run to completion.
     pub fn shutdown_now(self) {
@@ -227,13 +227,13 @@ mod test {
     use std::sync::{Arc, Barrier};
     use std::time::Duration;
 
-    use super::ScheduledTaskPool;
+    use super::ScheduledThreadPool;
 
     const TEST_TASKS: usize = 4;
 
     #[test]
     fn test_works() {
-        let pool = ScheduledTaskPool::new(TEST_TASKS);
+        let pool = ScheduledThreadPool::new(TEST_TASKS);
 
         let (tx, rx) = channel();
         for _ in range(0, TEST_TASKS) {
@@ -249,12 +249,12 @@ mod test {
     #[test]
     #[should_fail(expected = "size must be positive")]
     fn test_zero_tasks_panic() {
-        ScheduledTaskPool::new(0);
+        ScheduledThreadPool::new(0);
     }
 
     #[test]
     fn test_recovery_from_subtask_panic() {
-        let pool = ScheduledTaskPool::new(TEST_TASKS);
+        let pool = ScheduledThreadPool::new(TEST_TASKS);
 
         // Panic all the existing threads.
         let waiter = Arc::new(Barrier::new(TEST_TASKS as usize));
@@ -283,7 +283,7 @@ mod test {
 
     #[test]
     fn test_run_after() {
-        let pool = ScheduledTaskPool::new(TEST_TASKS);
+        let pool = ScheduledThreadPool::new(TEST_TASKS);
         let (tx, rx) = channel();
 
         let tx1 = tx.clone();
@@ -296,7 +296,7 @@ mod test {
 
     #[test]
     fn test_jobs_complete_after_drop() {
-        let pool = ScheduledTaskPool::new(TEST_TASKS);
+        let pool = ScheduledThreadPool::new(TEST_TASKS);
         let (tx, rx) = channel();
 
         let tx1 = tx.clone();
@@ -311,7 +311,7 @@ mod test {
 
     #[test]
     fn test_fixed_delay_jobs_stop_after_drop() {
-        let pool = Arc::new(ScheduledTaskPool::new(TEST_TASKS));
+        let pool = Arc::new(ScheduledThreadPool::new(TEST_TASKS));
         let (tx, rx) = channel();
         let (tx2, rx2) = channel();
 
