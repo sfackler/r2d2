@@ -89,34 +89,34 @@ struct SharedPool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: E
     cond: Condvar,
 }
 
-fn add_connection<C, E, M, H>(inner: &Arc<SharedPool<C, E, M, H>>)
+fn add_connection<C, E, M, H>(shared: &Arc<SharedPool<C, E, M, H>>)
         where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
-    let new_inner = inner.clone();
-    inner.internals.lock().unwrap().thread_pool.run(move || {
-        let inner = new_inner;
-        match inner.manager.connect() {
+    let new_shared = shared.clone();
+    shared.internals.lock().unwrap().thread_pool.run(move || {
+        let shared = new_shared;
+        match shared.manager.connect() {
             Ok(conn) => {
-                let mut internals = inner.internals.lock().unwrap();
+                let mut internals = shared.internals.lock().unwrap();
                 internals.conns.push_back(conn);
                 internals.num_conns += 1;
-                inner.cond.notify_one();
+                shared.cond.notify_one();
             }
-            Err(err) => inner.error_handler.handle_error(err),
+            Err(err) => shared.error_handler.handle_error(err),
         }
     });
 }
 
 /// A generic connection pool.
 pub struct Pool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
-    inner: Arc<SharedPool<C, E, M, H>>,
+    shared: Arc<SharedPool<C, E, M, H>>,
 }
 
 impl<C, E, M, H> fmt::Show for Pool<C, E, M, H>
         where C: Send, E: Send, M: PoolManager<C, E>+fmt::Show, H: ErrorHandler<E> {
     // FIXME there's more we can do here
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "Pool {{ config: {:?}, manager: {:?} }}", self.inner.config,
-               self.inner.manager)
+        write!(fmt, "Pool {{ config: {:?}, manager: {:?} }}", self.shared.config,
+               self.shared.manager)
     }
 }
 
@@ -135,7 +135,7 @@ impl<C, E, M, H> Pool<C, E, M, H>
             thread_pool: ScheduledThreadPool::new(config.helper_tasks as usize),
         };
 
-        let inner = Arc::new(SharedPool {
+        let shared = Arc::new(SharedPool {
             config: config,
             manager: manager,
             error_handler: error_handler,
@@ -144,27 +144,27 @@ impl<C, E, M, H> Pool<C, E, M, H>
         });
 
         for _ in range(0, config.pool_size) {
-            add_connection(&inner);
+            add_connection(&shared);
         }
 
         Ok(Pool {
-            inner: inner,
+            shared: shared,
         })
     }
 
     /// Retrieves a connection from the pool.
     pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, C, E, M, H>, ()> {
-        let mut internals = self.inner.internals.lock().unwrap();
+        let mut internals = self.shared.internals.lock().unwrap();
 
         loop {
             match internals.conns.pop_front() {
                 Some(mut conn) => {
                     drop(internals);
 
-                    if self.inner.config.test_on_check_out {
-                        if let Err(e) = self.inner.manager.is_valid(&mut conn) {
-                            self.inner.error_handler.handle_error(e);
-                            internals = self.inner.internals.lock().unwrap();
+                    if self.shared.config.test_on_check_out {
+                        if let Err(e) = self.shared.manager.is_valid(&mut conn) {
+                            self.shared.error_handler.handle_error(e);
+                            internals = self.shared.internals.lock().unwrap();
                             internals.num_conns -= 1;
                             continue
                         }
@@ -176,7 +176,7 @@ impl<C, E, M, H> Pool<C, E, M, H>
                     })
                 }
                 None => {
-                    internals = self.inner.cond.wait(internals).unwrap();
+                    internals = self.shared.cond.wait(internals).unwrap();
                 }
             }
         }
@@ -184,14 +184,14 @@ impl<C, E, M, H> Pool<C, E, M, H>
 
     fn put_back(&self, mut conn: C) {
         // This is specified to be fast, but call it before locking anyways
-        let broken = self.inner.manager.has_broken(&mut conn);
+        let broken = self.shared.manager.has_broken(&mut conn);
 
-        let mut internals = self.inner.internals.lock().unwrap();
+        let mut internals = self.shared.internals.lock().unwrap();
         if broken {
             internals.num_conns -= 1;
         } else {
             internals.conns.push_back(conn);
-            self.inner.cond.notify_one();
+            self.shared.cond.notify_one();
         }
     }
 }
