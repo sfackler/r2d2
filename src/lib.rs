@@ -10,10 +10,12 @@ extern crate time;
 
 use std::collections::RingBuf;
 use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, Mutex, Condvar, TaskPool};
+use std::sync::{Arc, Mutex, Condvar};
 use std::fmt;
 
 pub use config::{Config, ConfigError};
+
+use task::ScheduledThreadPool;
 
 mod config;
 mod task;
@@ -74,12 +76,12 @@ impl<E> ErrorHandler<E> for LoggingErrorHandler where E: fmt::Show {
 struct PoolInternals<C> {
     conns: RingBuf<C>,
     num_conns: u32,
-    task_pool: TaskPool,
+    thread_pool: ScheduledThreadPool,
 }
 
 unsafe impl<C: Send> Send for PoolInternals<C> {}
 
-struct InnerPool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
+struct SharedPool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     config: Config,
     manager: M,
     error_handler: H,
@@ -87,10 +89,10 @@ struct InnerPool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: Er
     cond: Condvar,
 }
 
-fn add_connection<C, E, M, H>(inner: &Arc<InnerPool<C, E, M, H>>)
+fn add_connection<C, E, M, H>(inner: &Arc<SharedPool<C, E, M, H>>)
         where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
     let new_inner = inner.clone();
-    inner.internals.lock().unwrap().task_pool.execute(move || {
+    inner.internals.lock().unwrap().thread_pool.run(move || {
         let inner = new_inner;
         match inner.manager.connect() {
             Ok(conn) => {
@@ -106,7 +108,7 @@ fn add_connection<C, E, M, H>(inner: &Arc<InnerPool<C, E, M, H>>)
 
 /// A generic connection pool.
 pub struct Pool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
-    inner: Arc<InnerPool<C, E, M, H>>,
+    inner: Arc<SharedPool<C, E, M, H>>,
 }
 
 impl<C, E, M, H> fmt::Show for Pool<C, E, M, H>
@@ -130,10 +132,10 @@ impl<C, E, M, H> Pool<C, E, M, H>
         let internals = PoolInternals {
             conns: RingBuf::new(),
             num_conns: config.pool_size,
-            task_pool: TaskPool::new(config.helper_tasks as usize),
+            thread_pool: ScheduledThreadPool::new(config.helper_tasks as usize),
         };
 
-        let inner = Arc::new(InnerPool {
+        let inner = Arc::new(SharedPool {
             config: config,
             manager: manager,
             error_handler: error_handler,
