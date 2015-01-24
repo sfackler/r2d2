@@ -20,16 +20,19 @@ use task::ScheduledThreadPool;
 mod config;
 mod task;
 
-/// A trait which provides database-specific functionality.
-pub trait PoolManager<C, E>: Send+Sync {
+/// A trait which provides connection-specific functionality.
+pub trait ConnectionManager: Send+Sync {
+    type Connection: Send;
+    type Error: Send;
+
     /// Attempts to create a new connection.
-    fn connect(&self) -> Result<C, E>;
+    fn connect(&self) -> Result<Self::Connection, Self::Error>;
 
     /// Determines if the connection is still connected to the database.
     ///
     /// A standard implementation would check if a simple query like `SELECT 1`
     /// succeeds.
-    fn is_valid(&self, conn: &mut C) -> Result<(), E>;
+    fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error>;
 
     /// *Quickly* determines if the connection is no longer usable.
     ///
@@ -40,10 +43,10 @@ pub trait PoolManager<C, E>: Send+Sync {
     /// For example, an implementation might check if the underlying TCP socket
     /// has disconnected. Implementations that do not support this kind of
     /// fast health check may simply return `false`.
-    fn has_broken(&self, conn: &mut C) -> bool;
+    fn has_broken(&self, conn: &mut Self::Connection) -> bool;
 }
 
-/// A trait which handles errors reported by the `PoolManager`.
+/// A trait which handles errors reported by the `ConnectionManager`.
 pub trait ErrorHandler<E>: Send+Sync {
     /// Handles an error.
     fn handle_error(&self, error: E);
@@ -81,16 +84,17 @@ struct PoolInternals<C> {
 
 unsafe impl<C: Send> Send for PoolInternals<C> {}
 
-struct SharedPool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
+struct SharedPool<M, H>
+        where M: ConnectionManager, H: ErrorHandler<<M as ConnectionManager>::Error> {
     config: Config,
     manager: M,
     error_handler: H,
-    internals: Mutex<PoolInternals<C>>,
+    internals: Mutex<PoolInternals<<M as ConnectionManager>::Connection>>,
     cond: Condvar,
 }
 
-fn add_connection<C, E, M, H>(shared: &Arc<SharedPool<C, E, M, H>>)
-        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
+fn add_connection<M, H>(shared: &Arc<SharedPool<M, H>>)
+        where M: ConnectionManager, H: ErrorHandler<<M as ConnectionManager>::Error> {
     let new_shared = shared.clone();
     shared.internals.lock().unwrap().thread_pool.run(move || {
         let shared = new_shared;
@@ -107,12 +111,13 @@ fn add_connection<C, E, M, H>(shared: &Arc<SharedPool<C, E, M, H>>)
 }
 
 /// A generic connection pool.
-pub struct Pool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
-    shared: Arc<SharedPool<C, E, M, H>>,
+pub struct Pool<M, H>
+        where M: ConnectionManager, H: ErrorHandler<<M as ConnectionManager>::Error> {
+    shared: Arc<SharedPool<M, H>>,
 }
 
-impl<C, E, M, H> fmt::Debug for Pool<C, E, M, H>
-        where C: Send, E: Send, M: PoolManager<C, E>+fmt::Debug, H: ErrorHandler<E> {
+impl<M, H> fmt::Debug for Pool<M, H>
+        where M: ConnectionManager + fmt::Debug, H: ErrorHandler<<M as ConnectionManager>::Error> {
     // FIXME there's more we can do here
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(fmt, "Pool {{ config: {:?}, manager: {:?} }}", self.shared.config,
@@ -120,13 +125,12 @@ impl<C, E, M, H> fmt::Debug for Pool<C, E, M, H>
     }
 }
 
-impl<C, E, M, H> Pool<C, E, M, H>
-        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
+impl<M, H> Pool<M, H>
+        where M: ConnectionManager, H: ErrorHandler<<M as ConnectionManager>::Error> {
     /// Creates a new connection pool.
     ///
     /// Returns an `Err` value only if `config` is invalid.
-    pub fn new(config: Config, manager: M, error_handler: H)
-               -> Result<Pool<C, E, M, H>, ConfigError> {
+    pub fn new(config: Config, manager: M, error_handler: H) -> Result<Pool<M, H>, ConfigError> {
         try!(config.validate());
 
         let internals = PoolInternals {
@@ -153,7 +157,7 @@ impl<C, E, M, H> Pool<C, E, M, H>
     }
 
     /// Retrieves a connection from the pool.
-    pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, C, E, M, H>, ()> {
+    pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, M, H>, ()> {
         let mut internals = self.shared.internals.lock().unwrap();
 
         loop {
@@ -182,7 +186,7 @@ impl<C, E, M, H> Pool<C, E, M, H>
         }
     }
 
-    fn put_back(&self, mut conn: C) {
+    fn put_back(&self, mut conn: <M as ConnectionManager>::Connection) {
         // This is specified to be fast, but call it before locking anyways
         let broken = self.shared.manager.has_broken(&mut conn);
 
@@ -197,14 +201,16 @@ impl<C, E, M, H> Pool<C, E, M, H>
 }
 
 /// A smart pointer wrapping a connection.
-pub struct PooledConnection<'a, C, E, M, H>
-        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
-    pool: &'a Pool<C, E, M, H>,
-    conn: Option<C>,
+pub struct PooledConnection<'a, M, H>
+        where M: ConnectionManager, H: ErrorHandler<<M as ConnectionManager>::Error> {
+    pool: &'a Pool<M, H>,
+    conn: Option<<M as ConnectionManager>::Connection>,
 }
 
-impl<'a, C, E, M, H> fmt::Debug for PooledConnection<'a, C, E, M, H>
-        where C: Send+fmt::Debug, E: Send, M: PoolManager<C, E>+fmt::Debug, H: ErrorHandler<E> {
+impl<'a, M, H> fmt::Debug for PooledConnection<'a, M, H>
+        where M: ConnectionManager + fmt::Debug,
+        H: ErrorHandler<<M as ConnectionManager>::Error>,
+        <M as ConnectionManager>::Connection: fmt::Debug {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(fmt, "PooledConnection {{ pool: {:?}, connection: {:?} }}", self.pool,
                self.conn.as_ref().unwrap())
@@ -212,25 +218,25 @@ impl<'a, C, E, M, H> fmt::Debug for PooledConnection<'a, C, E, M, H>
 }
 
 #[unsafe_destructor]
-impl<'a, C, E, M, H> Drop for PooledConnection<'a, C, E, M, H>
-        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
+impl<'a, M, H> Drop for PooledConnection<'a, M, H>
+        where M: ConnectionManager, H: ErrorHandler<<M as ConnectionManager>::Error> {
     fn drop(&mut self) {
         self.pool.put_back(self.conn.take().unwrap());
     }
 }
 
-impl<'a, C, E, M, H> Deref for PooledConnection<'a, C, E, M, H>
-        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
-    type Target = C;
+impl<'a, M, H> Deref for PooledConnection<'a, M, H>
+        where M: ConnectionManager, H: ErrorHandler<<M as ConnectionManager>::Error> {
+    type Target = <M as ConnectionManager>::Connection;
 
-    fn deref(&self) -> &C {
+    fn deref(&self) -> &<M as ConnectionManager>::Connection {
         self.conn.as_ref().unwrap()
     }
 }
 
-impl<'a, C, E, M, H> DerefMut for PooledConnection<'a, C, E, M, H>
-        where C: Send, E: Send, M: PoolManager<C, E>, H: ErrorHandler<E> {
-    fn deref_mut(&mut self) -> &mut C {
+impl<'a, M, H> DerefMut for PooledConnection<'a, M, H>
+        where M: ConnectionManager, H: ErrorHandler<<M as ConnectionManager>::Error> {
+    fn deref_mut(&mut self) -> &mut <M as ConnectionManager>::Connection {
         self.conn.as_mut().unwrap()
     }
 }

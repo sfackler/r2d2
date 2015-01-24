@@ -16,7 +16,10 @@ struct FakeConnection;
 
 struct OkManager;
 
-impl r2d2::PoolManager<FakeConnection, ()> for OkManager {
+impl r2d2::ConnectionManager for OkManager {
+    type Connection = FakeConnection;
+    type Error = ();
+
     fn connect(&self) -> Result<FakeConnection, ()> {
         Ok(FakeConnection)
     }
@@ -34,7 +37,10 @@ struct NthConnectFailManager {
     n: Mutex<u32>,
 }
 
-impl r2d2::PoolManager<FakeConnection, ()> for NthConnectFailManager {
+impl r2d2::ConnectionManager for NthConnectFailManager {
+    type Connection = FakeConnection;
+    type Error = ();
+
     fn connect(&self) -> Result<FakeConnection, ()> {
         let mut n = self.n.lock().unwrap();
         if *n > 0 {
@@ -87,7 +93,7 @@ fn test_acquire_release() {
 #[test]
 fn test_is_send_sync() {
     fn is_send_sync<T: Send+Sync>() {}
-    is_send_sync::<r2d2::Pool<FakeConnection, (), OkManager, r2d2::NoopErrorHandler>>();
+    is_send_sync::<r2d2::Pool<OkManager, r2d2::NoopErrorHandler>>();
 }
 
 #[test]
@@ -98,7 +104,10 @@ fn test_issue_2_unlocked_during_is_valid() {
         r: Mutex<Receiver<()>>,
     }
 
-    impl r2d2::PoolManager<FakeConnection, ()> for BlockingChecker {
+    impl r2d2::ConnectionManager for BlockingChecker {
+        type Connection = FakeConnection;
+        type Error = ();
+
         fn connect(&self) -> Result<FakeConnection, ()> {
             Ok(FakeConnection)
         }
@@ -157,7 +166,10 @@ fn test_drop_on_broken() {
 
     struct Handler;
 
-    impl r2d2::PoolManager<Connection, ()> for Handler {
+    impl r2d2::ConnectionManager for Handler {
+        type Connection = Connection;
+        type Error = ();
+
         fn connect(&self) -> Result<Connection, ()> {
             Ok(Connection)
         }
