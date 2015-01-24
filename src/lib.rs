@@ -82,8 +82,6 @@ struct PoolInternals<C> {
     thread_pool: ScheduledThreadPool,
 }
 
-unsafe impl<C: Send> Send for PoolInternals<C> {}
-
 struct SharedPool<M, H>
         where M: ConnectionManager, H: ErrorHandler<<M as ConnectionManager>::Error> {
     config: Config,
