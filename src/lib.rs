@@ -79,7 +79,6 @@ impl<E> ErrorHandler<E> for LoggingErrorHandler where E: fmt::Debug {
 struct PoolInternals<C> {
     conns: RingBuf<C>,
     num_conns: u32,
-    thread_pool: ScheduledThreadPool,
 }
 
 struct SharedPool<M, H>
@@ -89,12 +88,13 @@ struct SharedPool<M, H>
     error_handler: H,
     internals: Mutex<PoolInternals<<M as ConnectionManager>::Connection>>,
     cond: Condvar,
+    thread_pool: ScheduledThreadPool,
 }
 
 fn add_connection<M, H>(shared: &Arc<SharedPool<M, H>>)
         where M: ConnectionManager, H: ErrorHandler<<M as ConnectionManager>::Error> {
     let new_shared = shared.clone();
-    shared.internals.lock().unwrap().thread_pool.run(move || {
+    shared.thread_pool.run(move || {
         let shared = new_shared;
         match shared.manager.connect() {
             Ok(conn) => {
@@ -112,6 +112,14 @@ fn add_connection<M, H>(shared: &Arc<SharedPool<M, H>>)
 pub struct Pool<M, H>
         where M: ConnectionManager, H: ErrorHandler<<M as ConnectionManager>::Error> {
     shared: Arc<SharedPool<M, H>>,
+}
+
+#[unsafe_destructor]
+impl<M, H> Drop for Pool<M, H>
+        where M: ConnectionManager, H: ErrorHandler<<M as ConnectionManager>::Error> {
+    fn drop(&mut self) {
+        self.shared.thread_pool.clear();
+    }
 }
 
 impl<M, H> fmt::Debug for Pool<M, H>
@@ -134,7 +142,6 @@ impl<M, H> Pool<M, H>
         let internals = PoolInternals {
             conns: RingBuf::new(),
             num_conns: config.pool_size,
-            thread_pool: ScheduledThreadPool::new(config.helper_tasks as usize),
         };
 
         let shared = Arc::new(SharedPool {
@@ -143,6 +150,7 @@ impl<M, H> Pool<M, H>
             error_handler: error_handler,
             internals: Mutex::new(internals),
             cond: Condvar::new(),
+            thread_pool: ScheduledThreadPool::new(config.helper_tasks as usize),
         });
 
         for _ in range(0, config.pool_size) {

@@ -69,10 +69,6 @@ impl SharedPool {
     }
 }
 
-/// A fixed-size thread pool which allows jobs to be scheduled in the future.
-///
-/// When the pool falls out of scope, all pending tasks will be executed, after
-/// which the worker threads will shut down.
 pub struct ScheduledThreadPool {
     shared: Arc<SharedPool>,
 }
@@ -85,11 +81,6 @@ impl Drop for ScheduledThreadPool {
 }
 
 impl ScheduledThreadPool {
-    /// Creates a new `ScheduledThreadPool` with the specified number of threads.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `size` is 0.
     pub fn new(size: usize) -> ScheduledThreadPool {
         assert!(size > 0, "size must be positive");
 
@@ -118,12 +109,10 @@ impl ScheduledThreadPool {
         pool
     }
 
-    /// Asynchronously executes `job` with no added delay.
     pub fn run<F>(&self, job: F) where F: FnOnce() + Send {
         self.run_after(Duration::zero(), job)
     }
 
-    /// Asynchronously executes `job` after the specified delay.
     pub fn run_after<F>(&self, dur: Duration, job: F) where F: FnOnce() + Send {
         let job = Job {
             type_: JobType::Once(Thunk::new(job)),
@@ -132,11 +121,7 @@ impl ScheduledThreadPool {
         self.shared.run(job)
     }
 
-    /// Asynchronously executes `job` repeatedly at the specified rate.
-    ///
-    /// If the job panics, it will no longer be executed. When the pool is
-    /// destroyed, the job will no longer be rescheduled for execution, but any
-    /// pending execution of the job will be handled as a normal job would.
+    #[allow(unused)]
     pub fn run_at_fixed_rate<F>(&self, rate: Duration, f: F) where F: FnMut() + Send {
         let job = Job {
             type_: JobType::FixedRate { f: Box::new(f), rate: rate },
@@ -145,10 +130,7 @@ impl ScheduledThreadPool {
         self.shared.run(job)
     }
 
-    /// Consumes the `ScheduledThreadPool`, canceling any pending jobs.
-    ///
-    /// Currently running jobs will continue to run to completion.
-    pub fn shutdown_now(self) {
+    pub fn clear(&self) {
         self.shared.inner.lock().unwrap().queue.clear();
     }
 }
