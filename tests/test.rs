@@ -1,11 +1,12 @@
 #![allow(unstable)]
 extern crate r2d2;
 
-use std::sync::{Mutex, Arc};
-use std::sync::mpsc::{self, SyncSender, Receiver};
-use std::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, Ordering};
 use std::default::Default;
+use std::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, Ordering};
+use std::sync::mpsc::{self, SyncSender, Receiver};
+use std::sync::{Mutex, Arc};
 use std::thread::Thread;
+use std::time::Duration;
 
 use r2d2::ErrorHandler;
 
@@ -196,4 +197,28 @@ fn test_boxed_error_handler() {
     let handler: Box<ErrorHandler<()>> = Box::new(r2d2::NoopErrorHandler);
     handler.handle_error(());
     r2d2::Pool::new(Default::default(), OkManager, handler).unwrap();
+}
+
+#[test]
+fn test_initialization_failure() {
+    let config = r2d2::Config {
+        connection_timeout: Duration::seconds(1),
+        ..Default::default()
+    };
+    let manager = NthConnectFailManager {
+        n: Mutex::new(0),
+    };
+    r2d2::Pool::new(config, manager, r2d2::NoopErrorHandler).err().unwrap();
+}
+
+#[test]
+fn test_get_timeout() {
+    let config = r2d2::Config {
+        pool_size: 1,
+        connection_timeout: Duration::seconds(1),
+        ..Default::default()
+    };
+    let pool = r2d2::Pool::new(config, OkManager, r2d2::NoopErrorHandler).unwrap();
+    let _c = pool.get().unwrap();
+    pool.get().err().unwrap();
 }

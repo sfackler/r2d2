@@ -1,7 +1,7 @@
 //! A library providing a generic connection pool.
 #![feature(unsafe_destructor)]
 #![warn(missing_docs)]
-#![allow(unstable)]
+#![allow(unstable, missing_copy_implementations)]
 #![doc(html_root_url="https://sfackler.github.io/doc")]
 
 #[macro_use]
@@ -9,9 +9,12 @@ extern crate log;
 extern crate time;
 
 use std::collections::RingBuf;
+use std::error::Error;
+use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex, Condvar};
-use std::fmt;
+use std::time::Duration;
+use time::SteadyTime;
 
 pub use config::{Config, ConfigError};
 
@@ -91,10 +94,10 @@ struct SharedPool<M, H>
     thread_pool: ScheduledThreadPool,
 }
 
-fn add_connection<M, H>(shared: &Arc<SharedPool<M, H>>)
+fn add_connection<M, H>(delay: Duration, shared: &Arc<SharedPool<M, H>>)
         where M: ConnectionManager, H: ErrorHandler<<M as ConnectionManager>::Error> {
     let new_shared = shared.clone();
-    shared.thread_pool.run(move || {
+    shared.thread_pool.run_after(delay, move || {
         let shared = new_shared;
         match shared.manager.connect() {
             Ok(conn) => {
@@ -103,7 +106,10 @@ fn add_connection<M, H>(shared: &Arc<SharedPool<M, H>>)
                 internals.num_conns += 1;
                 shared.cond.notify_one();
             }
-            Err(err) => shared.error_handler.handle_error(err),
+            Err(err) => {
+                shared.error_handler.handle_error(err);
+                add_connection(Duration::seconds(1), &shared);
+            },
         }
     });
 }
@@ -131,17 +137,56 @@ impl<M, H> fmt::Debug for Pool<M, H>
     }
 }
 
+/// An error returned by `Pool::new` if it fails to initialize connections.
+#[derive(Debug)]
+pub struct InitializationError;
+
+impl fmt::Display for InitializationError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.write_str(self.description())
+    }
+}
+
+impl Error for InitializationError {
+    fn description(&self) -> &str {
+        "Unable to initialize connections"
+    }
+}
+
+/// An error returned by `Pool::get` if it times out without retrieving a connection.
+#[derive(Debug)]
+pub struct GetTimeout;
+
+impl fmt::Display for GetTimeout {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.write_str(self.description())
+    }
+}
+
+impl Error for GetTimeout {
+    fn description(&self) -> &str {
+        "Timed out while waiting for a connection"
+    }
+}
+
 impl<M, H> Pool<M, H>
         where M: ConnectionManager, H: ErrorHandler<<M as ConnectionManager>::Error> {
     /// Creates a new connection pool.
     ///
-    /// Returns an `Err` value only if `config` is invalid.
-    pub fn new(config: Config, manager: M, error_handler: H) -> Result<Pool<M, H>, ConfigError> {
-        try!(config.validate());
+    /// Returns an `Err` value if `initialization_fail_fast` is set to true in
+    /// the configuration and the pool is unable to open all of its
+    /// connections.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `config` is not valid.
+    pub fn new(config: Config, manager: M, error_handler: H)
+            -> Result<Pool<M, H>, InitializationError> {
+        config.validate().unwrap();
 
         let internals = PoolInternals {
             conns: RingBuf::new(),
-            num_conns: config.pool_size,
+            num_conns: 0,
         };
 
         let shared = Arc::new(SharedPool {
@@ -153,8 +198,21 @@ impl<M, H> Pool<M, H>
             thread_pool: ScheduledThreadPool::new(config.helper_tasks as usize),
         });
 
-        for _ in range(0, config.pool_size) {
-            add_connection(&shared);
+        for _ in 0..config.pool_size {
+            add_connection(Duration::zero(), &shared);
+        }
+
+        if shared.config.initialization_fail_fast {
+            let internals = shared.internals.lock().unwrap();
+            let initialized = shared.cond.wait_timeout_with(internals,
+                                                            shared.config.connection_timeout,
+                                                            |internals| {
+                internals.unwrap().num_conns == shared.config.pool_size
+            }).unwrap().1;
+
+            if !initialized {
+                return Err(InitializationError);
+            }
         }
 
         Ok(Pool {
@@ -163,7 +221,11 @@ impl<M, H> Pool<M, H>
     }
 
     /// Retrieves a connection from the pool.
-    pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, M, H>, ()> {
+    ///
+    /// Waits for at most `Config::connection_timeout` before returning an
+    /// error.
+    pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, M, H>, GetTimeout> {
+        let end = SteadyTime::now() + self.shared.config.connection_timeout;
         let mut internals = self.shared.internals.lock().unwrap();
 
         loop {
@@ -176,6 +238,7 @@ impl<M, H> Pool<M, H>
                             self.shared.error_handler.handle_error(e);
                             internals = self.shared.internals.lock().unwrap();
                             internals.num_conns -= 1;
+                            add_connection(Duration::zero(), &self.shared);
                             continue
                         }
                     }
@@ -186,7 +249,14 @@ impl<M, H> Pool<M, H>
                     })
                 }
                 None => {
-                    internals = self.shared.cond.wait(internals).unwrap();
+                    let now = SteadyTime::now();
+                    let (new_internals, no_timeout) =
+                        self.shared.cond.wait_timeout(internals, end - now).unwrap();
+                    internals = new_internals;
+
+                    if !no_timeout {
+                        return Err(GetTimeout);
+                    }
                 }
             }
         }

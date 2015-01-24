@@ -109,6 +109,7 @@ impl ScheduledThreadPool {
         pool
     }
 
+    #[allow(unused)]
     pub fn run<F>(&self, job: F) where F: FnOnce() + Send {
         self.run_after(Duration::zero(), job)
     }
