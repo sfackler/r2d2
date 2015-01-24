@@ -11,7 +11,7 @@ use r2d2::ErrorHandler;
 
 mod config;
 
-#[derive(Show, PartialEq)]
+#[derive(Debug, PartialEq)]
 struct FakeConnection;
 
 struct OkManager;
@@ -64,7 +64,7 @@ fn test_pool_size_ok() {
     let pool = r2d2::Pool::new(config, manager, r2d2::NoopErrorHandler).unwrap();
     let mut conns = vec![];
     for _ in range(0, config.pool_size) {
-        conns.push(pool.get().unwrap());
+        conns.push(pool.get().ok().unwrap());
     }
 }
 
@@ -76,10 +76,10 @@ fn test_acquire_release() {
     };
     let pool = r2d2::Pool::new(config, OkManager, r2d2::NoopErrorHandler).unwrap();
 
-    let conn1 = pool.get().unwrap();
-    let conn2 = pool.get().unwrap();
+    let conn1 = pool.get().ok().unwrap();
+    let conn2 = pool.get().ok().unwrap();
     drop(conn1);
-    let conn3 = pool.get().unwrap();
+    let conn3 = pool.get().ok().unwrap();
     drop(conn2);
     drop(conn3);
 }
@@ -133,13 +133,13 @@ fn test_issue_2_unlocked_during_is_valid() {
 
     let p2 = pool.clone();
     let _t = Thread::scoped(move || {
-        p2.get().unwrap();
+        p2.get().ok().unwrap();
     });
 
     r1.recv().unwrap();
     // get call by other task has triggered the health check
-    pool.get().unwrap();
-    s2.send(()).unwrap();
+    pool.get().ok().unwrap();
+    s2.send(()).ok().unwrap();
 }
 
 #[test]
@@ -173,7 +173,7 @@ fn test_drop_on_broken() {
 
     let pool = r2d2::Pool::new(Default::default(), Handler, r2d2::NoopErrorHandler).unwrap();
 
-    drop(pool.get().unwrap());
+    drop(pool.get().ok().unwrap());
 
     assert!(DROPPED.load(Ordering::SeqCst));
 }

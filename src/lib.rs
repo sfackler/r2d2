@@ -56,7 +56,7 @@ impl<E> ErrorHandler<E> for Box<ErrorHandler<E>> {
 }
 
 /// An `ErrorHandler` which does nothing.
-#[derive(Copy, Clone, Show)]
+#[derive(Copy, Clone, Debug)]
 pub struct NoopErrorHandler;
 
 impl<E> ErrorHandler<E> for NoopErrorHandler {
@@ -64,10 +64,10 @@ impl<E> ErrorHandler<E> for NoopErrorHandler {
 }
 
 /// An `ErrorHandler` which logs at the error level.
-#[derive(Copy, Clone, Show)]
+#[derive(Copy, Clone, Debug)]
 pub struct LoggingErrorHandler;
 
-impl<E> ErrorHandler<E> for LoggingErrorHandler where E: fmt::Show {
+impl<E> ErrorHandler<E> for LoggingErrorHandler where E: fmt::Debug {
     fn handle_error(&self, error: E) {
         error!("{:?}", error);
     }
@@ -111,8 +111,8 @@ pub struct Pool<C, E, M, H> where C: Send, E: Send, M: PoolManager<C, E>, H: Err
     shared: Arc<SharedPool<C, E, M, H>>,
 }
 
-impl<C, E, M, H> fmt::Show for Pool<C, E, M, H>
-        where C: Send, E: Send, M: PoolManager<C, E>+fmt::Show, H: ErrorHandler<E> {
+impl<C, E, M, H> fmt::Debug for Pool<C, E, M, H>
+        where C: Send, E: Send, M: PoolManager<C, E>+fmt::Debug, H: ErrorHandler<E> {
     // FIXME there's more we can do here
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(fmt, "Pool {{ config: {:?}, manager: {:?} }}", self.shared.config,
@@ -203,8 +203,8 @@ pub struct PooledConnection<'a, C, E, M, H>
     conn: Option<C>,
 }
 
-impl<'a, C, E, M, H> fmt::Show for PooledConnection<'a, C, E, M, H>
-        where C: Send+fmt::Show, E: Send, M: PoolManager<C, E>+fmt::Show, H: ErrorHandler<E> {
+impl<'a, C, E, M, H> fmt::Debug for PooledConnection<'a, C, E, M, H>
+        where C: Send+fmt::Debug, E: Send, M: PoolManager<C, E>+fmt::Debug, H: ErrorHandler<E> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(fmt, "PooledConnection {{ pool: {:?}, connection: {:?} }}", self.pool,
                self.conn.as_ref().unwrap())
