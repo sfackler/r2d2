@@ -195,7 +195,7 @@ impl<M, H> Pool<M, H>
             error_handler: error_handler,
             internals: Mutex::new(internals),
             cond: Condvar::new(),
-            thread_pool: ScheduledThreadPool::new(config.helper_tasks as usize),
+            thread_pool: ScheduledThreadPool::new(config.helper_threads as usize),
         });
 
         for _ in 0..config.pool_size {

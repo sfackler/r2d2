@@ -15,13 +15,13 @@ pub struct Config {
     ///
     /// Defaults to 10.
     pub pool_size: u32,
-    /// The number of tasks that the pool will use for asynchronous operations
-    /// such as connection creation and health checks.
+    /// The number of threads that the pool will use for asynchronous
+    /// operations such as connection creation and health checks.
     ///
     /// Must be positive.
     ///
     /// Defaults to 3.
-    pub helper_tasks: u32,
+    pub helper_threads: u32,
     /// If true, the health of a connection will be verified via a call to
     /// `ConnectionManager::is_valid` before it is checked out of the pool.
     ///
@@ -45,7 +45,7 @@ impl Default for Config {
     fn default() -> Config {
         Config {
             pool_size: 10,
-            helper_tasks: 3,
+            helper_threads: 3,
             test_on_check_out: true,
             initialization_fail_fast: true,
             connection_timeout: Duration::seconds(30),
@@ -60,8 +60,8 @@ impl Config {
             return Err(ConfigError::ZeroPoolSize);
         }
 
-        if self.helper_tasks == 0 {
-            return Err(ConfigError::ZeroHelperTasks);
+        if self.helper_threads == 0 {
+            return Err(ConfigError::ZeroHelperThreads);
         }
 
         if self.connection_timeout <= Duration::zero() {
@@ -77,8 +77,8 @@ impl Config {
 pub enum ConfigError {
     /// pool_size was zero
     ZeroPoolSize,
-    /// helper_tasks was zero
-    ZeroHelperTasks,
+    /// helper_threads was zero
+    ZeroHelperThreads,
     /// connection_timeout was not positive
     NonPositiveConnectionTimeout,
 }
@@ -93,7 +93,7 @@ impl Error for ConfigError {
     fn description(&self) -> &str {
         match *self {
             ConfigError::ZeroPoolSize => "pool_size must be positive",
-            ConfigError::ZeroHelperTasks => "helper_tasks must be positive",
+            ConfigError::ZeroHelperThreads => "helper_threads must be positive",
             ConfigError::NonPositiveConnectionTimeout => "connection_timeout must be positive",
         }
     }

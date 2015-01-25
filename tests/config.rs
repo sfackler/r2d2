@@ -19,12 +19,12 @@ fn test_zero_pool_size_err() {
 }
 
 #[test]
-fn test_zero_helper_tasks_err() {
+fn test_zero_helper_threads_err() {
     let config = r2d2::Config {
-        helper_tasks: 0,
+        helper_threads: 0,
         ..Default::default()
     };
-    assert_eq!(Err(r2d2::ConfigError::ZeroHelperTasks), config.validate());
+    assert_eq!(Err(r2d2::ConfigError::ZeroHelperThreads), config.validate());
 }
 
 #[test]
