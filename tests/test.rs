@@ -8,8 +8,6 @@ use std::sync::{Mutex, Arc};
 use std::thread::Thread;
 use std::time::Duration;
 
-use r2d2::ErrorHandler;
-
 mod config;
 
 #[derive(Debug, PartialEq)]
@@ -68,7 +66,7 @@ fn test_pool_size_ok() {
         ..Default::default()
     };
     let manager = NthConnectFailManager { n: Mutex::new(5) };
-    let pool = r2d2::Pool::new(config, manager, r2d2::NoopErrorHandler).unwrap();
+    let pool = r2d2::Pool::new(config, manager, Box::new(r2d2::NoopErrorHandler)).unwrap();
     let mut conns = vec![];
     for _ in range(0, config.pool_size) {
         conns.push(pool.get().ok().unwrap());
@@ -81,7 +79,7 @@ fn test_acquire_release() {
         pool_size: 2,
         ..Default::default()
     };
-    let pool = r2d2::Pool::new(config, OkManager, r2d2::NoopErrorHandler).unwrap();
+    let pool = r2d2::Pool::new(config, OkManager, Box::new(r2d2::NoopErrorHandler)).unwrap();
 
     let conn1 = pool.get().ok().unwrap();
     let conn2 = pool.get().ok().unwrap();
@@ -94,7 +92,7 @@ fn test_acquire_release() {
 #[test]
 fn test_is_send_sync() {
     fn is_send_sync<T: Send+Sync>() {}
-    is_send_sync::<r2d2::Pool<OkManager, r2d2::NoopErrorHandler>>();
+    is_send_sync::<r2d2::Pool<OkManager>>();
 }
 
 #[test]
@@ -139,7 +137,7 @@ fn test_issue_2_unlocked_during_is_valid() {
         s: Mutex::new(s1),
         r: Mutex::new(r2),
     };
-    let pool = Arc::new(r2d2::Pool::new(config, manager, r2d2::NoopErrorHandler).unwrap());
+    let pool = Arc::new(r2d2::Pool::new(config, manager, Box::new(r2d2::NoopErrorHandler)).unwrap());
 
     let p2 = pool.clone();
     let _t = Thread::scoped(move || {
@@ -184,19 +182,11 @@ fn test_drop_on_broken() {
         }
     }
 
-    let pool = r2d2::Pool::new(Default::default(), Handler, r2d2::NoopErrorHandler).unwrap();
+    let pool = r2d2::Pool::new(Default::default(), Handler, Box::new(r2d2::NoopErrorHandler)).unwrap();
 
     drop(pool.get().ok().unwrap());
 
     assert!(DROPPED.load(Ordering::SeqCst));
-}
-
-// Just make sure that a boxed error handler works and doesn't self recurse or anything
-#[test]
-fn test_boxed_error_handler() {
-    let handler: Box<ErrorHandler<()>> = Box::new(r2d2::NoopErrorHandler);
-    handler.handle_error(());
-    r2d2::Pool::new(Default::default(), OkManager, handler).unwrap();
 }
 
 #[test]
@@ -208,7 +198,7 @@ fn test_initialization_failure() {
     let manager = NthConnectFailManager {
         n: Mutex::new(0),
     };
-    r2d2::Pool::new(config, manager, r2d2::NoopErrorHandler).err().unwrap();
+    r2d2::Pool::new(config, manager, Box::new(r2d2::NoopErrorHandler)).err().unwrap();
 }
 
 #[test]
@@ -218,7 +208,7 @@ fn test_get_timeout() {
         connection_timeout: Duration::seconds(1),
         ..Default::default()
     };
-    let pool = r2d2::Pool::new(config, OkManager, r2d2::NoopErrorHandler).unwrap();
+    let pool = r2d2::Pool::new(config, OkManager, Box::new(r2d2::NoopErrorHandler)).unwrap();
     let _c = pool.get().unwrap();
     pool.get().err().unwrap();
 }
