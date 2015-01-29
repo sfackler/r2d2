@@ -1,7 +1,7 @@
 //! A library providing a generic connection pool.
-#![feature(unsafe_destructor)]
+#![feature(unsafe_destructor, core, std_misc)]
 #![warn(missing_docs)]
-#![allow(unstable, missing_copy_implementations)]
+#![allow(missing_copy_implementations)]
 #![doc(html_root_url="https://sfackler.github.io/doc")]
 
 #[macro_use]

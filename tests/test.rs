@@ -1,4 +1,4 @@
-#![allow(unstable)]
+#![feature(std_misc, core)]
 extern crate r2d2;
 
 use std::default::Default;
