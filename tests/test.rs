@@ -61,24 +61,18 @@ impl r2d2::ConnectionManager for NthConnectFailManager {
 
 #[test]
 fn test_pool_size_ok() {
-    let config = r2d2::Config {
-        pool_size: 5,
-        ..Default::default()
-    };
+    let config = r2d2::config::Builder::new().pool_size(5).build();
     let manager = NthConnectFailManager { n: Mutex::new(5) };
     let pool = r2d2::Pool::new(config, manager, Box::new(r2d2::NoopErrorHandler)).unwrap();
     let mut conns = vec![];
-    for _ in range(0, config.pool_size) {
+    for _ in range(0, config.pool_size()) {
         conns.push(pool.get().ok().unwrap());
     }
 }
 
 #[test]
 fn test_acquire_release() {
-    let config = r2d2::Config {
-        pool_size: 2,
-        ..Default::default()
-    };
+    let config = r2d2::config::Builder::new().pool_size(2).build();
     let pool = r2d2::Pool::new(config, OkManager, Box::new(r2d2::NoopErrorHandler)).unwrap();
 
     let conn1 = pool.get().ok().unwrap();
@@ -127,11 +121,10 @@ fn test_issue_2_unlocked_during_is_valid() {
     let (s1, r1) = mpsc::sync_channel(0);
     let (s2, r2) = mpsc::sync_channel(0);
 
-    let config = r2d2::Config {
-        test_on_check_out: true,
-        pool_size: 2,
-        ..Default::default()
-    };
+    let config = r2d2::config::Builder::new()
+        .test_on_check_out(true)
+        .pool_size(2)
+        .build();
     let manager = BlockingChecker {
         first: AtomicBool::new(true),
         s: Mutex::new(s1),
@@ -191,10 +184,9 @@ fn test_drop_on_broken() {
 
 #[test]
 fn test_initialization_failure() {
-    let config = r2d2::Config {
-        connection_timeout: Duration::seconds(1),
-        ..Default::default()
-    };
+    let config = r2d2::config::Builder::new()
+        .connection_timeout(Duration::seconds(1))
+        .build();
     let manager = NthConnectFailManager {
         n: Mutex::new(0),
     };
@@ -203,11 +195,10 @@ fn test_initialization_failure() {
 
 #[test]
 fn test_get_timeout() {
-    let config = r2d2::Config {
-        pool_size: 1,
-        connection_timeout: Duration::seconds(1),
-        ..Default::default()
-    };
+    let config = r2d2::config::Builder::new()
+        .pool_size(1)
+        .connection_timeout(Duration::seconds(1))
+        .build();
     let pool = r2d2::Pool::new(config, OkManager, Box::new(r2d2::NoopErrorHandler)).unwrap();
     let _c = pool.get().unwrap();
     pool.get().err().unwrap();

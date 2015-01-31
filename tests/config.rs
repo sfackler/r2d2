@@ -1,37 +1,43 @@
-use std::default::Default;
 use std::time::Duration;
 
-use r2d2;
+use r2d2::config;
 
 #[test]
-fn default_ok() {
-    let config: r2d2::Config = Default::default();
-    assert!(config.validate().is_ok());
+fn builder() {
+    let config = config::Builder::new()
+        .pool_size(1)
+        .helper_threads(2)
+        .test_on_check_out(false)
+        .initialization_fail_fast(false)
+        .connection_timeout(Duration::seconds(3))
+        .build();
+    assert_eq!(1, config.pool_size());
+    assert_eq!(2, config.helper_threads());
+    assert_eq!(false, config.test_on_check_out());
+    assert_eq!(false, config.initialization_fail_fast());
+    assert_eq!(Duration::seconds(3), config.connection_timeout());
 }
 
 #[test]
-fn test_zero_pool_size_err() {
-    let config = r2d2::Config {
-        pool_size: 0,
-        ..Default::default()
-    };
-    assert_eq!(Err(r2d2::ConfigError::ZeroPoolSize), config.validate());
+#[should_fail(expected = "pool_size must be positive")]
+fn builder_zero_pool_size() {
+    config::Builder::new().pool_size(0);
 }
 
 #[test]
-fn test_zero_helper_threads_err() {
-    let config = r2d2::Config {
-        helper_threads: 0,
-        ..Default::default()
-    };
-    assert_eq!(Err(r2d2::ConfigError::ZeroHelperThreads), config.validate());
+#[should_fail(expected = "helper_threads must be positive")]
+fn builder_zero_helper_threads() {
+    config::Builder::new().helper_threads(0);
 }
 
 #[test]
-fn test_nonpositive_connection_timeout_err() {
-    let config = r2d2::Config {
-        connection_timeout: Duration::zero(),
-        ..Default::default()
-    };
-    assert_eq!(Err(r2d2::ConfigError::NonPositiveConnectionTimeout), config.validate());
+#[should_fail(expected = "connection_timeout must be positive")]
+fn builder_zero_connection_timeout() {
+    config::Builder::new().connection_timeout(Duration::zero());
+}
+
+#[test]
+#[should_fail(expected = "connection_timeout must be positive")]
+fn builder_negative_connection_timeout() {
+    config::Builder::new().connection_timeout(Duration::seconds(-1));
 }

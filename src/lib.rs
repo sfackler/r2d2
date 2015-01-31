@@ -15,11 +15,12 @@ use std::sync::{Arc, Mutex, Condvar};
 use std::time::Duration;
 use time::SteadyTime;
 
-pub use config::{Config, ConfigError};
+#[doc(inline)]
+pub use config::Config;
 
 use task::ScheduledThreadPool;
 
-mod config;
+pub mod config;
 mod task;
 
 /// A trait which provides connection-specific functionality.
@@ -164,16 +165,10 @@ impl<M> Pool<M> where M: ConnectionManager {
     /// Returns an `Err` value if `initialization_fail_fast` is set to true in
     /// the configuration and the pool is unable to open all of its
     /// connections.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `config` is not valid.
     pub fn new(config: Config,
                manager: M,
                error_handler: Box<ErrorHandler<<M as ConnectionManager>::Error>>)
                -> Result<Pool<M>, InitializationError> {
-        config.validate().unwrap();
-
         let internals = PoolInternals {
             conns: RingBuf::new(),
             num_conns: 0,
@@ -185,19 +180,19 @@ impl<M> Pool<M> where M: ConnectionManager {
             error_handler: error_handler,
             internals: Mutex::new(internals),
             cond: Condvar::new(),
-            thread_pool: ScheduledThreadPool::new(config.helper_threads as usize),
+            thread_pool: ScheduledThreadPool::new(config.helper_threads() as usize),
         });
 
-        for _ in 0..config.pool_size {
+        for _ in 0..config.pool_size() {
             add_connection(Duration::zero(), &shared);
         }
 
-        if shared.config.initialization_fail_fast {
+        if shared.config.initialization_fail_fast() {
             let internals = shared.internals.lock().unwrap();
             let initialized = shared.cond.wait_timeout_with(internals,
-                                                            shared.config.connection_timeout,
+                                                            shared.config.connection_timeout(),
                                                             |internals| {
-                internals.unwrap().num_conns == shared.config.pool_size
+                internals.unwrap().num_conns == shared.config.pool_size()
             }).unwrap().1;
 
             if !initialized {
@@ -215,7 +210,7 @@ impl<M> Pool<M> where M: ConnectionManager {
     /// Waits for at most `Config::connection_timeout` before returning an
     /// error.
     pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, M>, GetTimeout> {
-        let end = SteadyTime::now() + self.shared.config.connection_timeout;
+        let end = SteadyTime::now() + self.shared.config.connection_timeout();
         let mut internals = self.shared.internals.lock().unwrap();
 
         loop {
@@ -223,7 +218,7 @@ impl<M> Pool<M> where M: ConnectionManager {
                 Some(mut conn) => {
                     drop(internals);
 
-                    if self.shared.config.test_on_check_out {
+                    if self.shared.config.test_on_check_out() {
                         if let Err(e) = self.shared.manager.is_valid(&mut conn) {
                             self.shared.error_handler.handle_error(e);
                             internals = self.shared.internals.lock().unwrap();
