@@ -61,7 +61,7 @@ impl r2d2::ConnectionManager for NthConnectFailManager {
 
 #[test]
 fn test_pool_size_ok() {
-    let config = r2d2::config::Builder::new().pool_size(5).build();
+    let config = r2d2::Config::builder().pool_size(5).build();
     let manager = NthConnectFailManager { n: Mutex::new(5) };
     let pool = r2d2::Pool::new(config, manager, Box::new(r2d2::NoopErrorHandler)).unwrap();
     let mut conns = vec![];
@@ -72,7 +72,7 @@ fn test_pool_size_ok() {
 
 #[test]
 fn test_acquire_release() {
-    let config = r2d2::config::Builder::new().pool_size(2).build();
+    let config = r2d2::Config::builder().pool_size(2).build();
     let pool = r2d2::Pool::new(config, OkManager, Box::new(r2d2::NoopErrorHandler)).unwrap();
 
     let conn1 = pool.get().ok().unwrap();
@@ -121,7 +121,7 @@ fn test_issue_2_unlocked_during_is_valid() {
     let (s1, r1) = mpsc::sync_channel(0);
     let (s2, r2) = mpsc::sync_channel(0);
 
-    let config = r2d2::config::Builder::new()
+    let config = r2d2::Config::builder()
         .test_on_check_out(true)
         .pool_size(2)
         .build();
@@ -184,7 +184,7 @@ fn test_drop_on_broken() {
 
 #[test]
 fn test_initialization_failure() {
-    let config = r2d2::config::Builder::new()
+    let config = r2d2::Config::builder()
         .connection_timeout(Duration::seconds(1))
         .build();
     let manager = NthConnectFailManager {
@@ -195,7 +195,7 @@ fn test_initialization_failure() {
 
 #[test]
 fn test_get_timeout() {
-    let config = r2d2::config::Builder::new()
+    let config = r2d2::Config::builder()
         .pool_size(1)
         .connection_timeout(Duration::seconds(1))
         .build();
