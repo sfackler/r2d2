@@ -106,13 +106,15 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Creates a new `Builder`.
+    /// Creates a new `Builder` which can be used to construct a customized
+    /// `Config`.
     ///
     /// All parameters are initialized to their default values.
     #[inline]
     pub fn builder() -> Builder {
         Builder::new()
     }
+
     /// The number of connections managed by the pool.
     ///
     /// Defaults to 10.
