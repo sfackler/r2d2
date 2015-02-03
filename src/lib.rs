@@ -119,9 +119,10 @@ impl<M> Drop for Pool<M> where M: ConnectionManager {
 }
 
 impl<M> fmt::Debug for Pool<M> where M: ConnectionManager + fmt::Debug {
-    // FIXME there's more we can do here
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "Pool {{ config: {:?}, manager: {:?} }}", self.shared.config,
+        write!(fmt, "Pool {{ idle_connections: {}, config: {:?}, manager: {:?} }}",
+               self.shared.internals.lock().unwrap().conns.len(),
+               self.shared.config,
                self.shared.manager)
     }
 }
