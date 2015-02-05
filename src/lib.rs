@@ -26,7 +26,7 @@ mod task;
 /// A trait which provides connection-specific functionality.
 pub trait ConnectionManager: Send+Sync {
     type Connection: Send;
-    type Error: Send;
+    type Error;
 
     /// Attempts to create a new connection.
     fn connect(&self) -> Result<Self::Connection, Self::Error>;
