@@ -1,10 +1,9 @@
 language: rust
 env:
   global:
-    - secure: CLHUG7GEOO1lb8ekE5YZf8eTCOAvR7VLIP2gpS6qm0dyp1uyghw8LOthKpHBJ6m12vDCW3pc/JA2tnTpacXWMVPfQ7Rgp61otFL3Eru+grLfIdth6yEtinShMZMFVljWoT7ARUl7SKHWCn4SRqdhCB6aTqiPp+glF7+H5IPTfJY=
+  - secure: LD3W5ilCQq3FkBt9hRZjpzVc6WITcjDzW93JGN2Rv364BiWtFCoCUZCD0An9zbM0OirJ0qoEK/HlikF3wrwAkyJaTB5EVwxjZ3SKlJ6VbxHxmgnripaSYR7fNOGlUjLWS5wvm0gRz61wKh7xI2Mwm3xbraujYkaafX0akZMUJ7M=
 script:
-  - cargo test
-  - cargo doc --no-deps
-after_script:
-  - mv target/doc .
-  - curl http://www.rust-ci.org/artifacts/put?t=$RUSTCI_TOKEN | sh
+- cargo test
+- cargo doc --no-deps
+after_success:
+- test $TRAVIS_PULL_REQUEST == "false" && test $TRAVIS_BRANCH == "master" && ./.travis/update_docs.sh
