@@ -7,7 +7,7 @@
 extern crate log;
 extern crate time;
 
-use std::collections::RingBuf;
+use std::collections::VecDeque;
 use std::error::Error;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
@@ -74,7 +74,7 @@ impl<E> ErrorHandler<E> for LoggingErrorHandler where E: fmt::Debug {
 }
 
 struct PoolInternals<C> {
-    conns: RingBuf<C>,
+    conns: VecDeque<C>,
     num_conns: u32,
 }
 
@@ -170,7 +170,7 @@ impl<M> Pool<M> where M: ConnectionManager {
                error_handler: Box<ErrorHandler<<M as ConnectionManager>::Error>>)
                -> Result<Pool<M>, InitializationError> {
         let internals = PoolInternals {
-            conns: RingBuf::new(),
+            conns: VecDeque::new(),
             num_conns: 0,
         };
 

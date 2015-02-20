@@ -8,9 +8,9 @@ use std::time::Duration;
 use time;
 
 enum JobType {
-    Once(Thunk),
+    Once(Thunk<'static>),
     FixedRate {
-        f: Box<FnMut() + Send>,
+        f: Box<FnMut() + Send + 'static>,
         rate: Duration,
     },
 }
