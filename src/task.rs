@@ -110,11 +110,11 @@ impl ScheduledThreadPool {
     }
 
     #[allow(unused)]
-    pub fn run<F>(&self, job: F) where F: FnOnce() + Send {
+    pub fn run<F>(&self, job: F) where F: FnOnce() + Send + 'static {
         self.run_after(Duration::zero(), job)
     }
 
-    pub fn run_after<F>(&self, dur: Duration, job: F) where F: FnOnce() + Send {
+    pub fn run_after<F>(&self, dur: Duration, job: F) where F: FnOnce() + Send + 'static {
         let job = Job {
             type_: JobType::Once(Thunk::new(job)),
             time: (time::precise_time_ns() as i64 + dur.num_nanoseconds().unwrap()) as u64,
@@ -123,7 +123,7 @@ impl ScheduledThreadPool {
     }
 
     #[allow(unused)]
-    pub fn run_at_fixed_rate<F>(&self, rate: Duration, f: F) where F: FnMut() + Send {
+    pub fn run_at_fixed_rate<F>(&self, rate: Duration, f: F) where F: FnMut() + Send + 'static {
         let job = Job {
             type_: JobType::FixedRate { f: Box::new(f), rate: rate },
             time: (time::precise_time_ns() as i64 + rate.num_nanoseconds().unwrap()) as u64,

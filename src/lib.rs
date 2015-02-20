@@ -24,9 +24,9 @@ pub mod config;
 mod task;
 
 /// A trait which provides connection-specific functionality.
-pub trait ConnectionManager: Send+Sync {
-    type Connection: Send;
-    type Error;
+pub trait ConnectionManager: Send+Sync+'static {
+    type Connection: Send + 'static;
+    type Error : 'static;
 
     /// Attempts to create a new connection.
     fn connect(&self) -> Result<Self::Connection, Self::Error>;
@@ -50,7 +50,7 @@ pub trait ConnectionManager: Send+Sync {
 }
 
 /// A trait which handles errors reported by the `ConnectionManager`.
-pub trait ErrorHandler<E>: Send+Sync {
+pub trait ErrorHandler<E>: Send+Sync+'static {
     /// Handles an error.
     fn handle_error(&self, error: E);
 }
