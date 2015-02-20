@@ -8,9 +8,9 @@ use std::time::Duration;
 use time;
 
 enum JobType {
-    Once(Thunk),
+    Once(Thunk<'static>),
     FixedRate {
-        f: Box<FnMut() + Send>,
+        f: Box<FnMut() + Send + 'static>,
         rate: Duration,
     },
 }
@@ -110,11 +110,11 @@ impl ScheduledThreadPool {
     }
 
     #[allow(unused)]
-    pub fn run<F>(&self, job: F) where F: FnOnce() + Send {
+    pub fn run<F>(&self, job: F) where F: FnOnce() + Send + 'static {
         self.run_after(Duration::zero(), job)
     }
 
-    pub fn run_after<F>(&self, dur: Duration, job: F) where F: FnOnce() + Send {
+    pub fn run_after<F>(&self, dur: Duration, job: F) where F: FnOnce() + Send + 'static {
         let job = Job {
             type_: JobType::Once(Thunk::new(job)),
             time: (time::precise_time_ns() as i64 + dur.num_nanoseconds().unwrap()) as u64,
@@ -123,7 +123,7 @@ impl ScheduledThreadPool {
     }
 
     #[allow(unused)]
-    pub fn run_at_fixed_rate<F>(&self, rate: Duration, f: F) where F: FnMut() + Send {
+    pub fn run_at_fixed_rate<F>(&self, rate: Duration, f: F) where F: FnMut() + Send + 'static {
         let job = Job {
             type_: JobType::FixedRate { f: Box::new(f), rate: rate },
             time: (time::precise_time_ns() as i64 + rate.num_nanoseconds().unwrap()) as u64,
@@ -222,7 +222,7 @@ mod test {
         for _ in range(0, TEST_TASKS) {
             let tx = tx.clone();
             pool.run(move|| {
-                tx.send(1us).unwrap();
+                tx.send(1usize).unwrap();
             });
         }
 
@@ -257,7 +257,7 @@ mod test {
             let waiter = waiter.clone();
             pool.run(move || {
                 waiter.wait();
-                tx.send(1us).unwrap();
+                tx.send(1usize).unwrap();
             });
         }
 
@@ -270,8 +270,8 @@ mod test {
         let (tx, rx) = channel();
 
         let tx1 = tx.clone();
-        pool.run_after(Duration::seconds(1), move || tx1.send(1us).unwrap());
-        pool.run_after(Duration::milliseconds(500), move || tx.send(2us).unwrap());
+        pool.run_after(Duration::seconds(1), move || tx1.send(1usize).unwrap());
+        pool.run_after(Duration::milliseconds(500), move || tx.send(2usize).unwrap());
 
         assert_eq!(2, rx.recv().unwrap());
         assert_eq!(1, rx.recv().unwrap());
@@ -283,8 +283,8 @@ mod test {
         let (tx, rx) = channel();
 
         let tx1 = tx.clone();
-        pool.run_after(Duration::seconds(1), move || tx1.send(1us).unwrap());
-        pool.run_after(Duration::milliseconds(500), move || tx.send(2us).unwrap());
+        pool.run_after(Duration::seconds(1), move || tx1.send(1usize).unwrap());
+        pool.run_after(Duration::milliseconds(500), move || tx.send(2usize).unwrap());
 
         drop(pool);
 

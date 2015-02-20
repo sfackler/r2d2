@@ -7,7 +7,7 @@
 extern crate log;
 extern crate time;
 
-use std::collections::RingBuf;
+use std::collections::VecDeque;
 use std::error::Error;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
@@ -24,9 +24,9 @@ pub mod config;
 mod task;
 
 /// A trait which provides connection-specific functionality.
-pub trait ConnectionManager: Send+Sync {
-    type Connection: Send;
-    type Error;
+pub trait ConnectionManager: Send+Sync+'static {
+    type Connection: Send + 'static;
+    type Error : 'static;
 
     /// Attempts to create a new connection.
     fn connect(&self) -> Result<Self::Connection, Self::Error>;
@@ -50,7 +50,7 @@ pub trait ConnectionManager: Send+Sync {
 }
 
 /// A trait which handles errors reported by the `ConnectionManager`.
-pub trait ErrorHandler<E>: Send+Sync {
+pub trait ErrorHandler<E>: Send+Sync+'static {
     /// Handles an error.
     fn handle_error(&self, error: E);
 }
@@ -74,7 +74,7 @@ impl<E> ErrorHandler<E> for LoggingErrorHandler where E: fmt::Debug {
 }
 
 struct PoolInternals<C> {
-    conns: RingBuf<C>,
+    conns: VecDeque<C>,
     num_conns: u32,
 }
 
@@ -170,7 +170,7 @@ impl<M> Pool<M> where M: ConnectionManager {
                error_handler: Box<ErrorHandler<<M as ConnectionManager>::Error>>)
                -> Result<Pool<M>, InitializationError> {
         let internals = PoolInternals {
-            conns: RingBuf::new(),
+            conns: VecDeque::new(),
             num_conns: 0,
         };
 
