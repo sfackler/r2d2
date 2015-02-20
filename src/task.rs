@@ -1,7 +1,7 @@
 use std::collections::BinaryHeap;
 use std::cmp::{PartialOrd, Ord, PartialEq, Eq, Ordering};
 use std::sync::{Arc, Mutex, Condvar};
-use std::thread::Thread;
+use std::thread;
 use std::thunk::Thunk;
 use std::time::Duration;
 
@@ -103,7 +103,7 @@ impl ScheduledThreadPool {
                 shared: pool.shared.clone(),
             };
 
-            Thread::spawn(move || worker.run());
+            thread::spawn(move || worker.run());
         }
 
         pool
@@ -143,11 +143,11 @@ struct Worker {
 impl Drop for Worker {
     fn drop(&mut self) {
         // Start up a new worker if this one's going away due to a panic from a job
-        if Thread::panicking() {
+        if thread::panicking() {
             let mut worker = Worker {
                 shared: self.shared.clone(),
             };
-            Thread::spawn(move || worker.run());
+            thread::spawn(move || worker.run());
         }
     }
 }

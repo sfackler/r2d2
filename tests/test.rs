@@ -5,7 +5,7 @@ use std::default::Default;
 use std::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, Ordering};
 use std::sync::mpsc::{self, SyncSender, Receiver};
 use std::sync::{Mutex, Arc};
-use std::thread::Thread;
+use std::thread;
 use std::time::Duration;
 
 mod config;
@@ -133,7 +133,7 @@ fn test_issue_2_unlocked_during_is_valid() {
     let pool = Arc::new(r2d2::Pool::new(config, manager, Box::new(r2d2::NoopErrorHandler)).unwrap());
 
     let p2 = pool.clone();
-    let _t = Thread::scoped(move || {
+    let _t = thread::scoped(move || {
         p2.get().ok().unwrap();
     });
 
