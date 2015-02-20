@@ -222,7 +222,7 @@ mod test {
         for _ in range(0, TEST_TASKS) {
             let tx = tx.clone();
             pool.run(move|| {
-                tx.send(1us).unwrap();
+                tx.send(1usize).unwrap();
             });
         }
 
@@ -257,7 +257,7 @@ mod test {
             let waiter = waiter.clone();
             pool.run(move || {
                 waiter.wait();
-                tx.send(1us).unwrap();
+                tx.send(1usize).unwrap();
             });
         }
 
@@ -270,8 +270,8 @@ mod test {
         let (tx, rx) = channel();
 
         let tx1 = tx.clone();
-        pool.run_after(Duration::seconds(1), move || tx1.send(1us).unwrap());
-        pool.run_after(Duration::milliseconds(500), move || tx.send(2us).unwrap());
+        pool.run_after(Duration::seconds(1), move || tx1.send(1usize).unwrap());
+        pool.run_after(Duration::milliseconds(500), move || tx.send(2usize).unwrap());
 
         assert_eq!(2, rx.recv().unwrap());
         assert_eq!(1, rx.recv().unwrap());
@@ -283,8 +283,8 @@ mod test {
         let (tx, rx) = channel();
 
         let tx1 = tx.clone();
-        pool.run_after(Duration::seconds(1), move || tx1.send(1us).unwrap());
-        pool.run_after(Duration::milliseconds(500), move || tx.send(2us).unwrap());
+        pool.run_after(Duration::seconds(1), move || tx1.send(1usize).unwrap());
+        pool.run_after(Duration::milliseconds(500), move || tx.send(2usize).unwrap());
 
         drop(pool);
 
