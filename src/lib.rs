@@ -11,7 +11,7 @@ use std::collections::VecDeque;
 use std::error::Error;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, Mutex, Condvar};
+use std::sync::{Arc, Mutex, MutexGuard, Condvar};
 use std::time::Duration;
 use time::SteadyTime;
 
@@ -25,7 +25,10 @@ mod task;
 
 /// A trait which provides connection-specific functionality.
 pub trait ConnectionManager: Send+Sync+'static {
+    /// The connection type this manager deals with.
     type Connection: Send + 'static;
+
+    /// The error type returned by `Connection`s.
     type Error : 'static;
 
     /// Attempts to create a new connection.
@@ -222,8 +225,7 @@ impl<M> Pool<M> where M: ConnectionManager {
                         if let Err(e) = self.shared.manager.is_valid(&mut conn) {
                             self.shared.error_handler.handle_error(e);
                             internals = self.shared.internals.lock().unwrap();
-                            internals.num_conns -= 1;
-                            add_connection(Duration::zero(), &self.shared);
+                            self.handle_broken(&mut internals);
                             continue
                         }
                     }
@@ -247,13 +249,18 @@ impl<M> Pool<M> where M: ConnectionManager {
         }
     }
 
+    fn handle_broken(&self, internals: &mut MutexGuard<PoolInternals<<M as ConnectionManager>::Connection>>) {
+        internals.num_conns -= 1;
+        add_connection(Duration::zero(), &self.shared);
+    }
+
     fn put_back(&self, mut conn: <M as ConnectionManager>::Connection) {
         // This is specified to be fast, but call it before locking anyways
         let broken = self.shared.manager.has_broken(&mut conn);
 
         let mut internals = self.shared.internals.lock().unwrap();
         if broken {
-            internals.num_conns -= 1;
+            self.handle_broken(&mut internals);
         } else {
             internals.conns.push_back(conn);
             self.shared.cond.notify_one();
