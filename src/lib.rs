@@ -84,8 +84,8 @@ struct PoolInternals<C> {
 struct SharedPool<M> where M: ConnectionManager {
     config: Config,
     manager: M,
-    error_handler: Box<ErrorHandler<<M as ConnectionManager>::Error>>,
-    internals: Mutex<PoolInternals<<M as ConnectionManager>::Connection>>,
+    error_handler: Box<ErrorHandler<M::Error>>,
+    internals: Mutex<PoolInternals<M::Connection>>,
     cond: Condvar,
     thread_pool: ScheduledThreadPool,
 }
@@ -170,7 +170,7 @@ impl<M> Pool<M> where M: ConnectionManager {
     /// connections.
     pub fn new(config: Config,
                manager: M,
-               error_handler: Box<ErrorHandler<<M as ConnectionManager>::Error>>)
+               error_handler: Box<ErrorHandler<M::Error>>)
                -> Result<Pool<M>, InitializationError> {
         let internals = PoolInternals {
             conns: VecDeque::new(),
@@ -249,12 +249,12 @@ impl<M> Pool<M> where M: ConnectionManager {
         }
     }
 
-    fn handle_broken(&self, internals: &mut MutexGuard<PoolInternals<<M as ConnectionManager>::Connection>>) {
+    fn handle_broken(&self, internals: &mut MutexGuard<PoolInternals<M::Connection>>) {
         internals.num_conns -= 1;
         add_connection(Duration::zero(), &self.shared);
     }
 
-    fn put_back(&self, mut conn: <M as ConnectionManager>::Connection) {
+    fn put_back(&self, mut conn: M::Connection) {
         // This is specified to be fast, but call it before locking anyways
         let broken = self.shared.manager.has_broken(&mut conn);
 
@@ -271,12 +271,11 @@ impl<M> Pool<M> where M: ConnectionManager {
 /// A smart pointer wrapping a connection.
 pub struct PooledConnection<'a, M> where M: ConnectionManager {
     pool: &'a Pool<M>,
-    conn: Option<<M as ConnectionManager>::Connection>,
+    conn: Option<M::Connection>,
 }
 
 impl<'a, M> fmt::Debug for PooledConnection<'a, M>
-        where M: ConnectionManager + fmt::Debug,
-        <M as ConnectionManager>::Connection: fmt::Debug {
+        where M: ConnectionManager + fmt::Debug, M::Connection: fmt::Debug {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(fmt, "PooledConnection {{ pool: {:?}, connection: {:?} }}", self.pool,
                self.conn.as_ref().unwrap())
@@ -291,15 +290,15 @@ impl<'a, M> Drop for PooledConnection<'a, M> where M: ConnectionManager {
 }
 
 impl<'a, M> Deref for PooledConnection<'a, M> where M: ConnectionManager {
-    type Target = <M as ConnectionManager>::Connection;
+    type Target = M::Connection;
 
-    fn deref(&self) -> &<M as ConnectionManager>::Connection {
+    fn deref(&self) -> &M::Connection {
         self.conn.as_ref().unwrap()
     }
 }
 
 impl<'a, M> DerefMut for PooledConnection<'a, M> where M: ConnectionManager {
-    fn deref_mut(&mut self) -> &mut <M as ConnectionManager>::Connection {
+    fn deref_mut(&mut self) -> &mut M::Connection {
         self.conn.as_mut().unwrap()
     }
 }
