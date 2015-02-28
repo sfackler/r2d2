@@ -24,12 +24,12 @@ pub mod config;
 mod task;
 
 /// A trait which provides connection-specific functionality.
-pub trait ConnectionManager: Send+Sync+'static {
+pub trait ConnectionManager: Send + Sync + 'static {
     /// The connection type this manager deals with.
     type Connection: Send + 'static;
 
     /// The error type returned by `Connection`s.
-    type Error : 'static;
+    type Error: 'static;
 
     /// Attempts to create a new connection.
     fn connect(&self) -> Result<Self::Connection, Self::Error>;
