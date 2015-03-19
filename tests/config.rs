@@ -19,25 +19,25 @@ fn builder() {
 }
 
 #[test]
-#[should_fail(expected = "pool_size must be positive")]
+#[should_panic(expected = "pool_size must be positive")]
 fn builder_zero_pool_size() {
     Config::builder().pool_size(0);
 }
 
 #[test]
-#[should_fail(expected = "helper_threads must be positive")]
+#[should_panic(expected = "helper_threads must be positive")]
 fn builder_zero_helper_threads() {
     Config::builder().helper_threads(0);
 }
 
 #[test]
-#[should_fail(expected = "connection_timeout must be positive")]
+#[should_panic(expected = "connection_timeout must be positive")]
 fn builder_zero_connection_timeout() {
     Config::builder().connection_timeout(Duration::zero());
 }
 
 #[test]
-#[should_fail(expected = "connection_timeout must be positive")]
+#[should_panic(expected = "connection_timeout must be positive")]
 fn builder_negative_connection_timeout() {
     Config::builder().connection_timeout(Duration::seconds(-1));
 }

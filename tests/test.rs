@@ -1,4 +1,4 @@
-#![feature(std_misc, core)]
+#![feature(std_misc)]
 extern crate r2d2;
 
 use std::default::Default;
@@ -65,7 +65,7 @@ fn test_pool_size_ok() {
     let manager = NthConnectFailManager { n: Mutex::new(5) };
     let pool = r2d2::Pool::new(config, manager, Box::new(r2d2::NoopErrorHandler)).unwrap();
     let mut conns = vec![];
-    for _ in range(0, config.pool_size()) {
+    for _ in 0..config.pool_size() {
         conns.push(pool.get().ok().unwrap());
     }
 }

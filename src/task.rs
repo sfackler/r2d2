@@ -109,7 +109,7 @@ impl ScheduledThreadPool {
         pool
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn run<F>(&self, job: F) where F: FnOnce() + Send + 'static {
         self.run_after(Duration::zero(), job)
     }
@@ -122,7 +122,7 @@ impl ScheduledThreadPool {
         self.shared.run(job)
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn run_at_fixed_rate<F>(&self, rate: Duration, f: F) where F: FnMut() + Send + 'static {
         let job = Job {
             type_: JobType::FixedRate { f: Box::new(f), rate: rate },
@@ -219,7 +219,7 @@ mod test {
         let pool = ScheduledThreadPool::new(TEST_TASKS);
 
         let (tx, rx) = channel();
-        for _ in range(0, TEST_TASKS) {
+        for _ in 0..TEST_TASKS {
             let tx = tx.clone();
             pool.run(move|| {
                 tx.send(1usize).unwrap();
@@ -230,7 +230,7 @@ mod test {
     }
 
     #[test]
-    #[should_fail(expected = "size must be positive")]
+    #[should_panic(expected = "size must be positive")]
     fn test_zero_tasks_panic() {
         ScheduledThreadPool::new(0);
     }
@@ -241,7 +241,7 @@ mod test {
 
         // Panic all the existing threads.
         let waiter = Arc::new(Barrier::new(TEST_TASKS as usize));
-        for _ in range(0, TEST_TASKS) {
+        for _ in 0..TEST_TASKS {
             let waiter = waiter.clone();
             pool.run(move || -> () {
                 waiter.wait();
@@ -252,7 +252,7 @@ mod test {
         // Ensure new threads were spawned to compensate.
         let (tx, rx) = channel();
         let waiter = Arc::new(Barrier::new(TEST_TASKS as usize));
-        for _ in range(0, TEST_TASKS) {
+        for _ in 0..TEST_TASKS {
             let tx = tx.clone();
             let waiter = waiter.clone();
             pool.run(move || {
