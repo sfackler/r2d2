@@ -1,5 +1,6 @@
 //! A library providing a generic connection pool.
-#![feature(unsafe_destructor, core, std_misc)]
+#![feature(unsafe_destructor, std_misc)]
+#![cfg_attr(test, feature(core))]
 #![warn(missing_docs)]
 #![doc(html_root_url="https://sfackler.github.io/r2d2/doc")]
 

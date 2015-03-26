@@ -14,5 +14,5 @@ name = "test"
 path = "tests/test.rs"
 
 [dependencies]
-log = "0.2"
+log = "0.3"
 time = "0.1.14"
