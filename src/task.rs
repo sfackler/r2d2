@@ -1,14 +1,14 @@
+use std::boxed::FnBox;
 use std::collections::BinaryHeap;
 use std::cmp::{PartialOrd, Ord, PartialEq, Eq, Ordering};
 use std::sync::{Arc, Mutex, Condvar};
 use std::thread;
-use std::thunk::Thunk;
 use std::time::Duration;
 
 use time;
 
 enum JobType {
-    Once(Thunk<'static>),
+    Once(Box<FnBox()+'static+Send>),
     FixedRate {
         f: Box<FnMut() + Send + 'static>,
         rate: Duration,
@@ -116,7 +116,7 @@ impl ScheduledThreadPool {
 
     pub fn run_after<F>(&self, dur: Duration, job: F) where F: FnOnce() + Send + 'static {
         let job = Job {
-            type_: JobType::Once(Thunk::new(job)),
+            type_: JobType::Once(Box::new(job)),
             time: (time::precise_time_ns() as i64 + dur.num_nanoseconds().unwrap()) as u64,
         };
         self.shared.run(job)
@@ -181,7 +181,13 @@ impl Worker {
 
             inner = match need {
                 Need::Wait => self.shared.cvar.wait(inner).unwrap(),
-                Need::WaitTimeout(t) => self.shared.cvar.wait_timeout(inner, t).unwrap().0,
+                Need::WaitTimeout(t) => {
+                    let mut timeout = t.num_milliseconds();
+                    if timeout < 0 {
+                        timeout = 0;
+                    }
+                    self.shared.cvar.wait_timeout_ms(inner, timeout as u32).unwrap().0
+                },
             };
         }
 
@@ -190,7 +196,7 @@ impl Worker {
 
     fn run_job(&self, job: Job) {
         match job.type_ {
-            JobType::Once(f) => f.invoke(()),
+            JobType::Once(f) => f(),
             JobType::FixedRate { mut f, rate } => {
                 f();
                 let new_job = Job {

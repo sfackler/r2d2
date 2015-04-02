@@ -1,5 +1,5 @@
 //! A library providing a generic connection pool.
-#![feature(unsafe_destructor, std_misc)]
+#![feature(core, std_misc, wait_timeout_with)]
 #![cfg_attr(test, feature(core))]
 #![warn(missing_docs)]
 #![doc(html_root_url="https://sfackler.github.io/r2d2/doc")]
@@ -115,7 +115,6 @@ pub struct Pool<M> where M: ConnectionManager {
     shared: Arc<SharedPool<M>>,
 }
 
-#[unsafe_destructor]
 impl<M> Drop for Pool<M> where M: ConnectionManager {
     fn drop(&mut self) {
         self.shared.thread_pool.clear();
@@ -238,8 +237,12 @@ impl<M> Pool<M> where M: ConnectionManager {
                 }
                 None => {
                     let now = SteadyTime::now();
+                    let mut timeout = (end - now).num_milliseconds();
+                    if timeout < 0 {
+                        timeout = 0
+                    };
                     let (new_internals, no_timeout) =
-                        self.shared.cond.wait_timeout(internals, end - now).unwrap();
+                        self.shared.cond.wait_timeout_ms(internals, timeout as u32).unwrap();
                     internals = new_internals;
 
                     if !no_timeout {
@@ -283,7 +286,6 @@ impl<'a, M> fmt::Debug for PooledConnection<'a, M>
     }
 }
 
-#[unsafe_destructor]
 impl<'a, M> Drop for PooledConnection<'a, M> where M: ConnectionManager {
     fn drop(&mut self) {
         self.pool.put_back(self.conn.take().unwrap());
