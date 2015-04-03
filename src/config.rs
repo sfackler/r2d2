@@ -1,6 +1,6 @@
 //! Pool configuration.
 use std::default::Default;
-use std::time::Duration;
+use time::Duration;
 
 /// A builder for `Config`.
 ///

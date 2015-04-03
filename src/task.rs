@@ -3,7 +3,7 @@ use std::collections::BinaryHeap;
 use std::cmp::{PartialOrd, Ord, PartialEq, Eq, Ordering};
 use std::sync::{Arc, Mutex, Condvar};
 use std::thread;
-use std::time::Duration;
+use time::Duration;
 
 use time;
 
@@ -214,7 +214,7 @@ mod test {
     use std::iter::AdditiveIterator;
     use std::sync::mpsc::channel;
     use std::sync::{Arc, Barrier};
-    use std::time::Duration;
+    use time::Duration;
 
     use super::ScheduledThreadPool;
 

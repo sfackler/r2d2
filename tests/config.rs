@@ -1,5 +1,4 @@
-use std::time::Duration;
-
+use time::Duration;
 use r2d2::Config;
 
 #[test]

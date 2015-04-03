@@ -1,6 +1,5 @@
 //! A library providing a generic connection pool.
-#![feature(core, std_misc, wait_timeout_with)]
-#![cfg_attr(test, feature(core))]
+#![feature(core)]
 #![warn(missing_docs)]
 #![doc(html_root_url="https://sfackler.github.io/r2d2/doc")]
 
@@ -13,8 +12,7 @@ use std::error::Error;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex, MutexGuard, Condvar};
-use std::time::Duration;
-use time::SteadyTime;
+use time::{Duration, SteadyTime};
 
 #[doc(inline)]
 pub use config::Config;
@@ -191,15 +189,17 @@ impl<M> Pool<M> where M: ConnectionManager {
         }
 
         if shared.config.initialization_fail_fast() {
-            let internals = shared.internals.lock().unwrap();
-            let initialized = shared.cond.wait_timeout_with(internals,
-                                                            shared.config.connection_timeout(),
-                                                            |internals| {
-                internals.unwrap().num_conns == shared.config.pool_size()
-            }).unwrap().1;
+            let end = SteadyTime::now() + shared.config.connection_timeout();
+            let mut internals = shared.internals.lock().unwrap();
 
-            if !initialized {
-                return Err(InitializationError);
+            while internals.num_conns != shared.config.pool_size() {
+                let wait = end - SteadyTime::now();
+                if wait <= Duration::zero() {
+                    return Err(InitializationError);
+                }
+                internals = shared.cond.wait_timeout_ms(internals,
+                                                        wait.num_milliseconds() as u32)
+                    .unwrap().0;
             }
         }
 

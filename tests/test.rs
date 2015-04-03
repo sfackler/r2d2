@@ -1,12 +1,12 @@
-#![feature(std_misc)]
 extern crate r2d2;
+extern crate time;
 
 use std::default::Default;
 use std::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, Ordering};
 use std::sync::mpsc::{self, SyncSender, Receiver};
 use std::sync::{Mutex, Arc};
 use std::thread;
-use std::time::Duration;
+use time::Duration;
 
 mod config;
 
