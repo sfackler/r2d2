@@ -6,7 +6,9 @@
 #[macro_use]
 extern crate log;
 extern crate time;
+extern crate debug_builders;
 
+use debug_builders::DebugStruct;
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fmt;
@@ -121,10 +123,11 @@ impl<M> Drop for Pool<M> where M: ConnectionManager {
 
 impl<M> fmt::Debug for Pool<M> where M: ConnectionManager + fmt::Debug {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "Pool {{ idle_connections: {}, config: {:?}, manager: {:?} }}",
-               self.shared.internals.lock().unwrap().conns.len(),
-               self.shared.config,
-               self.shared.manager)
+        DebugStruct::new(fmt, "Pool")
+            .field("idle_connections", &self.shared.internals.lock().unwrap().conns.len())
+            .field("config", &self.shared.config)
+            .field("manager", &self.shared.manager)
+            .finish()
     }
 }
 
@@ -281,8 +284,10 @@ pub struct PooledConnection<'a, M> where M: ConnectionManager {
 impl<'a, M> fmt::Debug for PooledConnection<'a, M>
         where M: ConnectionManager + fmt::Debug, M::Connection: fmt::Debug {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "PooledConnection {{ pool: {:?}, connection: {:?} }}", self.pool,
-               self.conn.as_ref().unwrap())
+        DebugStruct::new(fmt, "PooledConnection")
+            .field("pool", &self.pool)
+            .field("connection", self.conn.as_ref().unwrap())
+            .finish()
     }
 }
 
