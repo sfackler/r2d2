@@ -1,14 +1,14 @@
-use std::boxed::FnBox;
 use std::collections::BinaryHeap;
 use std::cmp::{PartialOrd, Ord, PartialEq, Eq, Ordering};
 use std::sync::{Arc, Mutex, Condvar};
 use std::thread;
 use time::Duration;
-
 use time;
 
+use thunk::Thunk;
+
 enum JobType {
-    Once(Box<FnBox()+'static+Send>),
+    Once(Thunk<'static>),
     FixedRate {
         f: Box<FnMut() + Send + 'static>,
         rate: Duration,
@@ -116,7 +116,7 @@ impl ScheduledThreadPool {
 
     pub fn run_after<F>(&self, dur: Duration, job: F) where F: FnOnce() + Send + 'static {
         let job = Job {
-            type_: JobType::Once(Box::new(job)),
+            type_: JobType::Once(Thunk::new(job)),
             time: (time::precise_time_ns() as i64 + dur.num_nanoseconds().unwrap()) as u64,
         };
         self.shared.run(job)
@@ -196,7 +196,7 @@ impl Worker {
 
     fn run_job(&self, job: Job) {
         match job.type_ {
-            JobType::Once(f) => f(),
+            JobType::Once(f) => f.invoke(()),
             JobType::FixedRate { mut f, rate } => {
                 f();
                 let new_job = Job {
@@ -211,7 +211,6 @@ impl Worker {
 
 #[cfg(test)]
 mod test {
-    use std::iter::AdditiveIterator;
     use std::sync::mpsc::channel;
     use std::sync::{Arc, Barrier};
     use time::Duration;
@@ -232,7 +231,7 @@ mod test {
             });
         }
 
-        assert_eq!(rx.iter().take(TEST_TASKS).sum(), TEST_TASKS);
+        assert_eq!(rx.iter().take(TEST_TASKS).fold(0, |a, b| a + b), TEST_TASKS);
     }
 
     #[test]
@@ -267,7 +266,7 @@ mod test {
             });
         }
 
-        assert_eq!(rx.iter().take(TEST_TASKS).sum(), TEST_TASKS);
+        assert_eq!(rx.iter().take(TEST_TASKS).fold(0, |a, b| a + b), TEST_TASKS);
     }
 
     #[test]

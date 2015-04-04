@@ -1,5 +1,4 @@
 //! A library providing a generic connection pool.
-#![feature(core)]
 #![warn(missing_docs)]
 #![doc(html_root_url="https://sfackler.github.io/r2d2/doc")]
 
@@ -23,6 +22,7 @@ use task::ScheduledThreadPool;
 
 pub mod config;
 mod task;
+mod thunk;
 
 /// A trait which provides connection-specific functionality.
 pub trait ConnectionManager: Send + Sync + 'static {
