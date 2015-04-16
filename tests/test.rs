@@ -133,7 +133,7 @@ fn test_issue_2_unlocked_during_is_valid() {
     let pool = Arc::new(r2d2::Pool::new(config, manager, Box::new(r2d2::NoopErrorHandler)).unwrap());
 
     let p2 = pool.clone();
-    let _t = thread::scoped(move || {
+    let t = thread::spawn(move || {
         p2.get().ok().unwrap();
     });
 
@@ -141,6 +141,8 @@ fn test_issue_2_unlocked_during_is_valid() {
     // get call by other task has triggered the health check
     pool.get().ok().unwrap();
     s2.send(()).ok().unwrap();
+
+    t.join().ok().unwrap();
 }
 
 #[test]
