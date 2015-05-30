@@ -205,3 +205,11 @@ fn test_get_timeout() {
     let _c = pool.get().unwrap();
     pool.get().err().unwrap();
 }
+
+#[test]
+fn test_get_arc() {
+    let config = r2d2::Config::default();
+    let error_handler = Box::new(r2d2::NoopErrorHandler);
+    let pool = Arc::new(r2d2::Pool::new(config, OkManager, error_handler).unwrap());
+    r2d2::Pool::get_arc(pool).unwrap();
+}

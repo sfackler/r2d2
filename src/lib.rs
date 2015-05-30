@@ -211,11 +211,7 @@ impl<M> Pool<M> where M: ConnectionManager {
         })
     }
 
-    /// Retrieves a connection from the pool.
-    ///
-    /// Waits for at most `Config::connection_timeout` before returning an
-    /// error.
-    pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, M>, GetTimeout> {
+    fn get_inner(&self) -> Result<M::Connection, GetTimeout> {
         let end = SteadyTime::now() + self.shared.config.connection_timeout();
         let mut internals = self.shared.internals.lock().unwrap();
 
@@ -233,10 +229,7 @@ impl<M> Pool<M> where M: ConnectionManager {
                         }
                     }
 
-                    return Ok(PooledConnection {
-                        pool: self,
-                        conn: Some(conn),
-                    })
+                    return Ok(conn);
                 }
                 None => {
                     let now = SteadyTime::now();
@@ -254,6 +247,32 @@ impl<M> Pool<M> where M: ConnectionManager {
                 }
             }
         }
+    }
+
+    /// Retrieves a connection from the pool.
+    ///
+    /// Waits for at most `Config::connection_timeout` before returning an
+    /// error.
+    pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, M>, GetTimeout> {
+        Ok(PooledConnection {
+            pool: MaybeArcPool::Ref(self),
+            conn: Some(try!(self.get_inner())),
+        })
+    }
+
+    /// Retrieves a connection from a reference counted pool.
+    ///
+    /// Unlike `Pool::get`, the resulting `PooledConnection` is not bound by
+    /// any lifetime, as it will store the `Arc` internally.
+    ///
+    /// # Note
+    ///
+    /// This is a static function rather than a method for technical reasons.
+    pub fn get_arc(pool: Arc<Self>) -> Result<PooledConnection<'static, M>, GetTimeout> {
+        Ok(PooledConnection {
+            conn: Some(try!(pool.get_inner())),
+            pool: MaybeArcPool::Arc(pool),
+        })
     }
 
     fn handle_broken(&self, internals: &mut MutexGuard<PoolInternals<M::Connection>>) {
@@ -275,9 +294,25 @@ impl<M> Pool<M> where M: ConnectionManager {
     }
 }
 
+enum MaybeArcPool<'a, M> where M: ConnectionManager {
+    Ref(&'a Pool<M>),
+    Arc(Arc<Pool<M>>),
+}
+
+impl<'a, M> Deref for MaybeArcPool<'a, M> where M: ConnectionManager {
+    type Target = Pool<M>;
+
+    fn deref(&self) -> &Pool<M> {
+        match *self {
+            MaybeArcPool::Ref(p) => p,
+            MaybeArcPool::Arc(ref p) => &**p,
+        }
+    }
+}
+
 /// A smart pointer wrapping a connection.
 pub struct PooledConnection<'a, M> where M: ConnectionManager {
-    pool: &'a Pool<M>,
+    pool: MaybeArcPool<'a, M>,
     conn: Option<M::Connection>,
 }
 
@@ -285,7 +320,7 @@ impl<'a, M> fmt::Debug for PooledConnection<'a, M>
         where M: ConnectionManager + fmt::Debug, M::Connection: fmt::Debug {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         DebugStruct::new(fmt, "PooledConnection")
-            .field("pool", &self.pool)
+            .field("pool", &*self.pool)
             .field("connection", self.conn.as_ref().unwrap())
             .finish()
     }
