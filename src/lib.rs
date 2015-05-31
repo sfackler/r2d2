@@ -264,10 +264,6 @@ impl<M> Pool<M> where M: ConnectionManager {
     ///
     /// Unlike `Pool::get`, the resulting `PooledConnection` is not bound by
     /// any lifetime, as it will store the `Arc` internally.
-    ///
-    /// # Note
-    ///
-    /// This is a static function rather than a method for technical reasons.
     pub fn get_arc(pool: Arc<Self>) -> Result<PooledConnection<'static, M>, GetTimeout> {
         Ok(PooledConnection {
             conn: Some(try!(pool.get_inner())),
