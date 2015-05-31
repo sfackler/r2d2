@@ -1,6 +1,6 @@
 //! A library providing a generic connection pool.
 #![warn(missing_docs)]
-#![doc(html_root_url="https://sfackler.github.io/r2d2/doc/master")]
+#![doc(html_root_url="https://sfackler.github.io/r2d2/doc/v0.5.8")]
 
 #[macro_use]
 extern crate log;
