@@ -157,7 +157,7 @@ impl<M> fmt::Debug for Pool<M> where M: ManageConnection + fmt::Debug {
 
 /// An error returned by `Pool::new` if it fails to initialize connections.
 #[derive(Debug)]
-pub struct InitializationError;
+pub struct InitializationError(());
 
 impl fmt::Display for InitializationError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
@@ -173,7 +173,7 @@ impl Error for InitializationError {
 
 /// An error returned by `Pool::get` if it times out without retrieving a connection.
 #[derive(Debug)]
-pub struct GetTimeout;
+pub struct GetTimeout(());
 
 impl fmt::Display for GetTimeout {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
@@ -219,7 +219,7 @@ impl<M> Pool<M> where M: ManageConnection {
             while internals.num_conns != shared.config.pool_size() {
                 let wait = end - SteadyTime::now();
                 if wait <= Duration::zero() {
-                    return Err(InitializationError);
+                    return Err(InitializationError(()));
                 }
                 internals = shared.cond.wait_timeout_ms(internals,
                                                         wait.num_milliseconds() as u32)
@@ -263,7 +263,7 @@ impl<M> Pool<M> where M: ManageConnection {
                     internals = new_internals;
 
                     if !no_timeout {
-                        return Err(GetTimeout);
+                        return Err(GetTimeout(()));
                     }
                 }
             }
