@@ -54,16 +54,16 @@ pub trait ConnectionManager: Send + Sync + 'static {
 }
 
 /// A trait which handles errors reported by the `ConnectionManager`.
-pub trait ErrorHandler<E>: Send+Sync+'static {
+pub trait HandleError<E>: Send+Sync+'static {
     /// Handles an error.
     fn handle_error(&self, error: E);
 }
 
-/// An `ErrorHandler` which does nothing.
+/// A `HandleError` which does nothing.
 #[derive(Copy, Clone, Debug)]
 pub struct NoopErrorHandler;
 
-impl<E> ErrorHandler<E> for NoopErrorHandler {
+impl<E> HandleError<E> for NoopErrorHandler {
     fn handle_error(&self, _: E) {}
 }
 
@@ -71,7 +71,7 @@ impl<E> ErrorHandler<E> for NoopErrorHandler {
 #[derive(Copy, Clone, Debug)]
 pub struct LoggingErrorHandler;
 
-impl<E> ErrorHandler<E> for LoggingErrorHandler where E: fmt::Debug {
+impl<E> HandleError<E> for LoggingErrorHandler where E: fmt::Debug {
     fn handle_error(&self, error: E) {
         error!("{:?}", error);
     }

@@ -3,7 +3,7 @@ use std::fmt;
 use time::Duration;
 use debug_builders::DebugStruct;
 
-use {ErrorHandler, NoopErrorHandler};
+use {HandleError, NoopErrorHandler};
 
 /// A builder for `Config`.
 ///
@@ -77,7 +77,7 @@ impl<E> Builder<E> {
 
     /// Sets the `error_handler`.
     #[inline]
-    pub fn error_handler(mut self, error_handler: Box<ErrorHandler<E>>) -> Builder<E> {
+    pub fn error_handler(mut self, error_handler: Box<HandleError<E>>) -> Builder<E> {
         self.c.error_handler = error_handler;
         self
     }
@@ -99,7 +99,7 @@ pub struct Config<E> {
     test_on_check_out: bool,
     initialization_fail_fast: bool,
     connection_timeout: Duration,
-    error_handler: Box<ErrorHandler<E>>,
+    error_handler: Box<HandleError<E>>,
 }
 
 impl<E> fmt::Debug for Config<E> {
@@ -186,7 +186,7 @@ impl<E> Config<E> {
     ///
     /// Defaults to `r2d2::NoopErrorHandler`.
     #[inline]
-    pub fn error_handler(&self) -> &ErrorHandler<E> {
+    pub fn error_handler(&self) -> &HandleError<E> {
         &*self.error_handler
     }
 }
