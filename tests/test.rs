@@ -15,7 +15,7 @@ struct FakeConnection;
 
 struct OkManager;
 
-impl r2d2::ConnectionManager for OkManager {
+impl r2d2::ManageConnection for OkManager {
     type Connection = FakeConnection;
     type Error = ();
 
@@ -36,7 +36,7 @@ struct NthConnectFailManager {
     n: Mutex<u32>,
 }
 
-impl r2d2::ConnectionManager for NthConnectFailManager {
+impl r2d2::ManageConnection for NthConnectFailManager {
     type Connection = FakeConnection;
     type Error = ();
 
@@ -97,7 +97,7 @@ fn test_issue_2_unlocked_during_is_valid() {
         r: Mutex<Receiver<()>>,
     }
 
-    impl r2d2::ConnectionManager for BlockingChecker {
+    impl r2d2::ManageConnection for BlockingChecker {
         type Connection = FakeConnection;
         type Error = ();
 
@@ -160,7 +160,7 @@ fn test_drop_on_broken() {
 
     struct Handler;
 
-    impl r2d2::ConnectionManager for Handler {
+    impl r2d2::ManageConnection for Handler {
         type Connection = Connection;
         type Error = ();
 

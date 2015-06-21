@@ -13,11 +13,12 @@ pool maintains a set of open connections to a database, handing them out for
 repeated use.
 
 r2d2 is agnostic to the connection type it is managing. Implementors of the
-`ConnectionManager` trait provide the database-specific logic to create and
+`ManageConnection` trait provide the database-specific logic to create and
 check the health of connections.
 
 The [r2d2-postgres](https://github.com/sfackler/r2d2-postgres) crate provides
-a `ConnectionManager` for [rust-postgres](https://github.com/sfackler/rust-postgres).
+a `ManageConnection` implementation for
+[rust-postgres](https://github.com/sfackler/rust-postgres).
 
 # Example
 
@@ -33,7 +34,7 @@ fn main() {
     let config = r2d2::Config::builder()
         .error_handler(Box::new(r2d2::LoggingErrorHandler))
         .build();
-    let manager = r2d2_foodb::FooConnectionManager::new("localhost:1234");
+    let manager = r2d2_foodb::FooManageConnection::new("localhost:1234");
 
     let pool = Arc::new(r2d2::Pool::new(config, manager).unwrap());
 

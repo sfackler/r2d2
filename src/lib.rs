@@ -25,7 +25,7 @@ mod task;
 mod thunk;
 
 /// A trait which provides connection-specific functionality.
-pub trait ConnectionManager: Send + Sync + 'static {
+pub trait ManageConnection: Send + Sync + 'static {
     /// The connection type this manager deals with.
     type Connection: Send + 'static;
 
@@ -53,7 +53,7 @@ pub trait ConnectionManager: Send + Sync + 'static {
     fn has_broken(&self, conn: &mut Self::Connection) -> bool;
 }
 
-/// A trait which handles errors reported by the `ConnectionManager`.
+/// A trait which handles errors reported by the `ManageConnection`.
 pub trait HandleError<E>: Send+Sync+'static {
     /// Handles an error.
     fn handle_error(&self, error: E);
@@ -80,7 +80,7 @@ impl<E> HandleError<E> for LoggingErrorHandler where E: fmt::Debug {
 /// A trait which allows for customization of connections.
 pub trait CustomizeConnection<C, E>: Send+Sync+'static {
     /// Called with connections immediately after they are returned from
-    /// `ConnectionManager::connect`.
+    /// `ManageConnection::connect`.
     ///
     /// The default implementation simply returns `Ok(())`.
     ///
@@ -104,7 +104,7 @@ struct PoolInternals<C> {
     num_conns: u32,
 }
 
-struct SharedPool<M> where M: ConnectionManager {
+struct SharedPool<M> where M: ManageConnection {
     config: Config<M::Connection, M::Error>,
     manager: M,
     internals: Mutex<PoolInternals<M::Connection>>,
@@ -112,7 +112,7 @@ struct SharedPool<M> where M: ConnectionManager {
     thread_pool: ScheduledThreadPool,
 }
 
-fn add_connection<M>(delay: Duration, shared: &Arc<SharedPool<M>>) where M: ConnectionManager {
+fn add_connection<M>(delay: Duration, shared: &Arc<SharedPool<M>>) where M: ManageConnection {
     let new_shared = shared.clone();
     shared.thread_pool.run_after(delay, move || {
         let shared = new_shared;
@@ -135,17 +135,17 @@ fn add_connection<M>(delay: Duration, shared: &Arc<SharedPool<M>>) where M: Conn
 }
 
 /// A generic connection pool.
-pub struct Pool<M> where M: ConnectionManager {
+pub struct Pool<M> where M: ManageConnection {
     shared: Arc<SharedPool<M>>,
 }
 
-impl<M> Drop for Pool<M> where M: ConnectionManager {
+impl<M> Drop for Pool<M> where M: ManageConnection {
     fn drop(&mut self) {
         self.shared.thread_pool.clear();
     }
 }
 
-impl<M> fmt::Debug for Pool<M> where M: ConnectionManager + fmt::Debug {
+impl<M> fmt::Debug for Pool<M> where M: ManageConnection + fmt::Debug {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         DebugStruct::new(fmt, "Pool")
             .field("idle_connections", &self.shared.internals.lock().unwrap().conns.len())
@@ -187,7 +187,7 @@ impl Error for GetTimeout {
     }
 }
 
-impl<M> Pool<M> where M: ConnectionManager {
+impl<M> Pool<M> where M: ManageConnection {
     /// Creates a new connection pool.
     ///
     /// Returns an `Err` value if `initialization_fail_fast` is set to true in
@@ -311,12 +311,12 @@ impl<M> Pool<M> where M: ConnectionManager {
     }
 }
 
-enum MaybeArcPool<'a, M> where M: ConnectionManager {
+enum MaybeArcPool<'a, M> where M: ManageConnection {
     Ref(&'a Pool<M>),
     Arc(Arc<Pool<M>>),
 }
 
-impl<'a, M> Deref for MaybeArcPool<'a, M> where M: ConnectionManager {
+impl<'a, M> Deref for MaybeArcPool<'a, M> where M: ManageConnection {
     type Target = Pool<M>;
 
     fn deref(&self) -> &Pool<M> {
@@ -328,13 +328,13 @@ impl<'a, M> Deref for MaybeArcPool<'a, M> where M: ConnectionManager {
 }
 
 /// A smart pointer wrapping a connection.
-pub struct PooledConnection<'a, M> where M: ConnectionManager {
+pub struct PooledConnection<'a, M> where M: ManageConnection {
     pool: MaybeArcPool<'a, M>,
     conn: Option<M::Connection>,
 }
 
 impl<'a, M> fmt::Debug for PooledConnection<'a, M>
-        where M: ConnectionManager + fmt::Debug, M::Connection: fmt::Debug {
+        where M: ManageConnection + fmt::Debug, M::Connection: fmt::Debug {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         DebugStruct::new(fmt, "PooledConnection")
             .field("pool", &*self.pool)
@@ -343,13 +343,13 @@ impl<'a, M> fmt::Debug for PooledConnection<'a, M>
     }
 }
 
-impl<'a, M> Drop for PooledConnection<'a, M> where M: ConnectionManager {
+impl<'a, M> Drop for PooledConnection<'a, M> where M: ManageConnection {
     fn drop(&mut self) {
         self.pool.put_back(self.conn.take().unwrap());
     }
 }
 
-impl<'a, M> Deref for PooledConnection<'a, M> where M: ConnectionManager {
+impl<'a, M> Deref for PooledConnection<'a, M> where M: ManageConnection {
     type Target = M::Connection;
 
     fn deref(&self) -> &M::Connection {
@@ -357,7 +357,7 @@ impl<'a, M> Deref for PooledConnection<'a, M> where M: ConnectionManager {
     }
 }
 
-impl<'a, M> DerefMut for PooledConnection<'a, M> where M: ConnectionManager {
+impl<'a, M> DerefMut for PooledConnection<'a, M> where M: ManageConnection {
     fn deref_mut(&mut self) -> &mut M::Connection {
         self.conn.as_mut().unwrap()
     }
