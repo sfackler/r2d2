@@ -212,3 +212,58 @@ fn test_get_arc() {
     let pool = Arc::new(r2d2::Pool::new(config, OkManager).unwrap());
     r2d2::Pool::get_arc(pool).unwrap();
 }
+
+#[test]
+fn test_connection_customizer() {
+    static DROPPED: AtomicBool = ATOMIC_BOOL_INIT;
+    DROPPED.store(false, Ordering::SeqCst);
+
+    struct Connection(i32);
+
+    impl Drop for Connection {
+        fn drop(&mut self) {
+            DROPPED.store(true, Ordering::SeqCst);
+        }
+    }
+
+    struct Handler;
+
+    impl r2d2::ManageConnection for Handler {
+        type Connection = Connection;
+        type Error = ();
+
+        fn connect(&self) -> Result<Connection, ()> {
+            Ok(Connection(0))
+        }
+
+        fn is_valid(&self, _: &mut Connection) -> Result<(), ()> {
+            Ok(())
+        }
+
+        fn has_broken(&self, _: &mut Connection) -> bool {
+            true
+        }
+    }
+
+    struct Customizer;
+
+    impl r2d2::CustomizeConnection<Connection, ()> for Customizer {
+        fn on_acquire(&self, conn: &mut Connection) -> Result<(), ()> {
+            if !DROPPED.load(Ordering::SeqCst) {
+                Err(())
+            } else {
+                conn.0 = 1;
+                Ok(())
+            }
+        }
+    }
+
+    let config = r2d2::Config::builder()
+        .connection_customizer(Box::new(Customizer))
+        .build();
+    let pool = r2d2::Pool::new(config, Handler).unwrap();
+
+    let conn = pool.get().unwrap();
+    assert_eq!(1, conn.0);
+    assert!(DROPPED.load(Ordering::SeqCst));
+}
