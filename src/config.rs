@@ -1,12 +1,11 @@
 //! Pool configuration.
-use std::default::Default;
 use time::Duration;
 
 /// A builder for `Config`.
 ///
 /// See the documentation of `Config` for more details about the default value
 /// and meaning of the configuration parameters.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Builder {
     c: Config,
 }
@@ -18,7 +17,7 @@ impl Builder {
     #[inline]
     pub fn new() -> Builder {
         Builder {
-            c: Default::default(),
+            c: Config::default(),
         }
     }
 
@@ -83,7 +82,7 @@ impl Builder {
 ///
 /// `Config` implements `Default`, which provides a set of reasonable default
 /// values. It can be constructed using a `Builder`.
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug)]
 pub struct Config {
     pool_size: u32,
     helper_threads: u32,

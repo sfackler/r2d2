@@ -179,15 +179,15 @@ impl<M> Pool<M> where M: ConnectionManager {
         };
 
         let shared = Arc::new(SharedPool {
+            thread_pool: ScheduledThreadPool::new(config.helper_threads() as usize),
             config: config,
             manager: manager,
             error_handler: error_handler,
             internals: Mutex::new(internals),
             cond: Condvar::new(),
-            thread_pool: ScheduledThreadPool::new(config.helper_threads() as usize),
         });
 
-        for _ in 0..config.pool_size() {
+        for _ in 0..shared.config.pool_size() {
             add_connection(Duration::zero(), &shared);
         }
 
