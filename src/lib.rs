@@ -77,13 +77,35 @@ impl<E> HandleError<E> for LoggingErrorHandler where E: fmt::Debug {
     }
 }
 
+/// A trait which allows for customization of connections.
+pub trait CustomizeConnection<C, E>: Send+Sync+'static {
+    /// Called with connections immediately after they are returned from
+    /// `ConnectionManager::connect`.
+    ///
+    /// The default implementation simply returns `Ok(())`.
+    ///
+    /// # Errors
+    ///
+    /// If this method returns an error, the connection will be discarded.
+    #[allow(unused_variables)]
+    fn on_acquire(&self, conn: &mut C) -> Result<(), E> {
+        Ok(())
+    }
+}
+
+/// A `CustomizeConnection` which does nothing.
+#[derive(Copy, Clone, Debug)]
+pub struct NoopConnectionCustomizer;
+
+impl<C, E> CustomizeConnection<C, E> for NoopConnectionCustomizer {}
+
 struct PoolInternals<C> {
     conns: VecDeque<C>,
     num_conns: u32,
 }
 
 struct SharedPool<M> where M: ConnectionManager {
-    config: Config<M::Error>,
+    config: Config<M::Connection, M::Error>,
     manager: M,
     internals: Mutex<PoolInternals<M::Connection>>,
     cond: Condvar,
@@ -94,7 +116,10 @@ fn add_connection<M>(delay: Duration, shared: &Arc<SharedPool<M>>) where M: Conn
     let new_shared = shared.clone();
     shared.thread_pool.run_after(delay, move || {
         let shared = new_shared;
-        match shared.manager.connect() {
+        let conn = shared.manager.connect().and_then(|mut conn| {
+            shared.config.connection_customizer().on_acquire(&mut conn).map(|_| conn)
+        });
+        match conn {
             Ok(conn) => {
                 let mut internals = shared.internals.lock().unwrap();
                 internals.conns.push_back(conn);
@@ -168,7 +193,8 @@ impl<M> Pool<M> where M: ConnectionManager {
     /// Returns an `Err` value if `initialization_fail_fast` is set to true in
     /// the configuration and the pool is unable to open all of its
     /// connections.
-    pub fn new(config: Config<M::Error>, manager: M) -> Result<Pool<M>, InitializationError> {
+    pub fn new(config: Config<M::Connection, M::Error>, manager: M)
+               -> Result<Pool<M>, InitializationError> {
         let internals = PoolInternals {
             conns: VecDeque::new(),
             num_conns: 0,

@@ -3,23 +3,23 @@ use std::fmt;
 use time::Duration;
 use debug_builders::DebugStruct;
 
-use {HandleError, NoopErrorHandler};
+use {HandleError, NoopErrorHandler, CustomizeConnection, NoopConnectionCustomizer};
 
 /// A builder for `Config`.
 ///
 /// See the documentation of `Config` for more details about the default value
 /// and meaning of the configuration parameters.
 #[derive(Debug)]
-pub struct Builder<E> {
-    c: Config<E>,
+pub struct Builder<C, E> {
+    c: Config<C, E>,
 }
 
-impl<E> Builder<E> {
+impl<C, E> Builder<C, E> {
     /// Constructs a new `Builder`.
     ///
     /// Parameters are initialized with their default values.
     #[inline]
-    pub fn new() -> Builder<E> {
+    pub fn new() -> Builder<C, E> {
         Builder {
             c: Config::default(),
         }
@@ -31,7 +31,7 @@ impl<E> Builder<E> {
     ///
     /// Panics if `pool_size` is 0.
     #[inline]
-    pub fn pool_size(mut self, pool_size: u32) -> Builder<E> {
+    pub fn pool_size(mut self, pool_size: u32) -> Builder<C, E> {
         assert!(pool_size > 0, "pool_size must be positive");
         self.c.pool_size = pool_size;
         self
@@ -43,7 +43,7 @@ impl<E> Builder<E> {
     ///
     /// Panics if `helper_threads` is 0.
     #[inline]
-    pub fn helper_threads(mut self, helper_threads: u32) -> Builder<E> {
+    pub fn helper_threads(mut self, helper_threads: u32) -> Builder<C, E> {
         assert!(helper_threads > 0, "helper_threads must be positive");
         self.c.helper_threads = helper_threads;
         self
@@ -51,14 +51,14 @@ impl<E> Builder<E> {
 
     /// Sets `test_on_check_out`.
     #[inline]
-    pub fn test_on_check_out(mut self, test_on_check_out: bool) -> Builder<E> {
+    pub fn test_on_check_out(mut self, test_on_check_out: bool) -> Builder<C, E> {
         self.c.test_on_check_out = test_on_check_out;
         self
     }
 
     /// Sets `initialization_fail_fast`.
     #[inline]
-    pub fn initialization_fail_fast(mut self, initialization_fail_fast: bool) -> Builder<E> {
+    pub fn initialization_fail_fast(mut self, initialization_fail_fast: bool) -> Builder<C, E> {
         self.c.initialization_fail_fast = initialization_fail_fast;
         self
     }
@@ -69,7 +69,7 @@ impl<E> Builder<E> {
     ///
     /// Panics if `connection_timeout` is nonpositive.
     #[inline]
-    pub fn connection_timeout(mut self, connection_timeout: Duration) -> Builder<E> {
+    pub fn connection_timeout(mut self, connection_timeout: Duration) -> Builder<C, E> {
         assert!(connection_timeout > Duration::zero(), "connection_timeout must be positive");
         self.c.connection_timeout = connection_timeout;
         self
@@ -77,14 +77,22 @@ impl<E> Builder<E> {
 
     /// Sets the `error_handler`.
     #[inline]
-    pub fn error_handler(mut self, error_handler: Box<HandleError<E>>) -> Builder<E> {
+    pub fn error_handler(mut self, error_handler: Box<HandleError<E>>) -> Builder<C, E> {
         self.c.error_handler = error_handler;
+        self
+    }
+
+    /// Sets the `connection_customizer`.
+    #[inline]
+    pub fn connection_customizer(mut self, connection_customizer: Box<CustomizeConnection<C, E>>)
+                                 -> Builder<C, E> {
+        self.c.connection_customizer = connection_customizer;
         self
     }
 
     /// Consumes the `Builder`, turning it into a `Config`.
     #[inline]
-    pub fn build(self) -> Config<E> {
+    pub fn build(self) -> Config<C, E> {
         self.c
     }
 }
@@ -93,16 +101,17 @@ impl<E> Builder<E> {
 ///
 /// `Config` implements `Default`, which provides a set of reasonable default
 /// values. It can be constructed using a `Builder`.
-pub struct Config<E> {
+pub struct Config<C, E> {
     pool_size: u32,
     helper_threads: u32,
     test_on_check_out: bool,
     initialization_fail_fast: bool,
     connection_timeout: Duration,
     error_handler: Box<HandleError<E>>,
+    connection_customizer: Box<CustomizeConnection<C, E>>,
 }
 
-impl<E> fmt::Debug for Config<E> {
+impl<C, E> fmt::Debug for Config<C, E> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         DebugStruct::new(fmt, "Config")
             .field("pool_size", &self.pool_size)
@@ -114,9 +123,9 @@ impl<E> fmt::Debug for Config<E> {
     }
 }
 
-impl<E> Default for Config<E> {
+impl<C, E> Default for Config<C, E> {
     #[inline]
-    fn default() -> Config<E> {
+    fn default() -> Config<C, E> {
         Config {
             pool_size: 10,
             helper_threads: 3,
@@ -124,17 +133,18 @@ impl<E> Default for Config<E> {
             initialization_fail_fast: true,
             connection_timeout: Duration::seconds(30),
             error_handler: Box::new(NoopErrorHandler),
+            connection_customizer: Box::new(NoopConnectionCustomizer),
         }
     }
 }
 
-impl<E> Config<E> {
+impl<C, E> Config<C, E> {
     /// Creates a new `Builder` which can be used to construct a customized
     /// `Config`.
     ///
     /// All parameters are initialized to their default values.
     #[inline]
-    pub fn builder() -> Builder<E> {
+    pub fn builder() -> Builder<C, E> {
         Builder::new()
     }
 
@@ -188,5 +198,13 @@ impl<E> Config<E> {
     #[inline]
     pub fn error_handler(&self) -> &HandleError<E> {
         &*self.error_handler
+    }
+
+    /// The connection customizer used by the pool.
+    ///
+    /// Defaults to `r2d2::NoopConnectionCustomizer`.
+    #[inline]
+    pub fn connection_customizer(&self) -> &CustomizeConnection<C, E> {
+        &*self.connection_customizer
     }
 }
