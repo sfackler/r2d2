@@ -22,10 +22,9 @@ a `ManageConnection` implementation for
 
 # Example
 
-Using a fake "foodb" database.
+Using an imaginary "foodb" database.
 ```rust
 use std::thread;
-use std::sync::Arc;
 
 extern crate r2d2;
 extern crate r2d2_foodb;
@@ -36,7 +35,7 @@ fn main() {
         .build();
     let manager = r2d2_foodb::FooManageConnection::new("localhost:1234");
 
-    let pool = Arc::new(r2d2::Pool::new(config, manager).unwrap());
+    let pool = r2d2::Pool::new(config, manager).unwrap();
 
     for _ in 0..20i32 {
         let pool = pool.clone();

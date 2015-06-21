@@ -207,13 +207,6 @@ fn test_get_timeout() {
 }
 
 #[test]
-fn test_get_arc() {
-    let config = r2d2::Config::default();
-    let pool = Arc::new(r2d2::Pool::new(config, OkManager).unwrap());
-    r2d2::Pool::get_arc(pool).unwrap();
-}
-
-#[test]
 fn test_connection_customizer() {
     static DROPPED: AtomicBool = ATOMIC_BOOL_INIT;
     DROPPED.store(false, Ordering::SeqCst);

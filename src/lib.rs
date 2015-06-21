@@ -145,6 +145,15 @@ impl<M> Drop for Pool<M> where M: ManageConnection {
     }
 }
 
+impl<M> Clone for Pool<M> where M: ManageConnection {
+    /// Returns a new `Pool` referencing the same state as `self`.
+    fn clone(&self) -> Pool<M> {
+        Pool {
+            shared: self.shared.clone(),
+        }
+    }
+}
+
 impl<M> fmt::Debug for Pool<M> where M: ManageConnection + fmt::Debug {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         DebugStruct::new(fmt, "Pool")
@@ -274,21 +283,10 @@ impl<M> Pool<M> where M: ManageConnection {
     ///
     /// Waits for at most `Config::connection_timeout` before returning an
     /// error.
-    pub fn get<'a>(&'a self) -> Result<PooledConnection<'a, M>, GetTimeout> {
+    pub fn get(&self) -> Result<PooledConnection<M>, GetTimeout> {
         Ok(PooledConnection {
-            pool: MaybeArcPool::Ref(self),
+            pool: self.clone(),
             conn: Some(try!(self.get_inner())),
-        })
-    }
-
-    /// Retrieves a connection from a reference counted pool.
-    ///
-    /// Unlike `Pool::get`, the resulting `PooledConnection` is not bound by
-    /// any lifetime, as it will store the `Arc` internally.
-    pub fn get_arc(pool: Arc<Self>) -> Result<PooledConnection<'static, M>, GetTimeout> {
-        Ok(PooledConnection {
-            conn: Some(try!(pool.get_inner())),
-            pool: MaybeArcPool::Arc(pool),
         })
     }
 
@@ -311,45 +309,29 @@ impl<M> Pool<M> where M: ManageConnection {
     }
 }
 
-enum MaybeArcPool<'a, M> where M: ManageConnection {
-    Ref(&'a Pool<M>),
-    Arc(Arc<Pool<M>>),
-}
-
-impl<'a, M> Deref for MaybeArcPool<'a, M> where M: ManageConnection {
-    type Target = Pool<M>;
-
-    fn deref(&self) -> &Pool<M> {
-        match *self {
-            MaybeArcPool::Ref(p) => p,
-            MaybeArcPool::Arc(ref p) => &**p,
-        }
-    }
-}
-
 /// A smart pointer wrapping a connection.
-pub struct PooledConnection<'a, M> where M: ManageConnection {
-    pool: MaybeArcPool<'a, M>,
+pub struct PooledConnection<M> where M: ManageConnection {
+    pool: Pool<M>,
     conn: Option<M::Connection>,
 }
 
-impl<'a, M> fmt::Debug for PooledConnection<'a, M>
+impl<M> fmt::Debug for PooledConnection<M>
         where M: ManageConnection + fmt::Debug, M::Connection: fmt::Debug {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         DebugStruct::new(fmt, "PooledConnection")
-            .field("pool", &*self.pool)
+            .field("pool", &self.pool)
             .field("connection", self.conn.as_ref().unwrap())
             .finish()
     }
 }
 
-impl<'a, M> Drop for PooledConnection<'a, M> where M: ManageConnection {
+impl<M> Drop for PooledConnection<M> where M: ManageConnection {
     fn drop(&mut self) {
         self.pool.put_back(self.conn.take().unwrap());
     }
 }
 
-impl<'a, M> Deref for PooledConnection<'a, M> where M: ManageConnection {
+impl<M> Deref for PooledConnection<M> where M: ManageConnection {
     type Target = M::Connection;
 
     fn deref(&self) -> &M::Connection {
@@ -357,7 +339,7 @@ impl<'a, M> Deref for PooledConnection<'a, M> where M: ManageConnection {
     }
 }
 
-impl<'a, M> DerefMut for PooledConnection<'a, M> where M: ManageConnection {
+impl<M> DerefMut for PooledConnection<M> where M: ManageConnection {
     fn deref_mut(&mut self) -> &mut M::Connection {
         self.conn.as_mut().unwrap()
     }
