@@ -63,7 +63,7 @@ impl r2d2::ConnectionManager for NthConnectFailManager {
 fn test_pool_size_ok() {
     let config = r2d2::Config::builder().pool_size(5).build();
     let manager = NthConnectFailManager { n: Mutex::new(5) };
-    let pool = r2d2::Pool::new(config, manager, Box::new(r2d2::NoopErrorHandler)).unwrap();
+    let pool = r2d2::Pool::new(config, manager).unwrap();
     let mut conns = vec![];
     for _ in 0..5 {
         conns.push(pool.get().ok().unwrap());
@@ -73,7 +73,7 @@ fn test_pool_size_ok() {
 #[test]
 fn test_acquire_release() {
     let config = r2d2::Config::builder().pool_size(2).build();
-    let pool = r2d2::Pool::new(config, OkManager, Box::new(r2d2::NoopErrorHandler)).unwrap();
+    let pool = r2d2::Pool::new(config, OkManager).unwrap();
 
     let conn1 = pool.get().ok().unwrap();
     let conn2 = pool.get().ok().unwrap();
@@ -130,7 +130,7 @@ fn test_issue_2_unlocked_during_is_valid() {
         s: Mutex::new(s1),
         r: Mutex::new(r2),
     };
-    let pool = Arc::new(r2d2::Pool::new(config, manager, Box::new(r2d2::NoopErrorHandler)).unwrap());
+    let pool = Arc::new(r2d2::Pool::new(config, manager).unwrap());
 
     let p2 = pool.clone();
     let t = thread::spawn(move || {
@@ -177,7 +177,7 @@ fn test_drop_on_broken() {
         }
     }
 
-    let pool = r2d2::Pool::new(Default::default(), Handler, Box::new(r2d2::NoopErrorHandler)).unwrap();
+    let pool = r2d2::Pool::new(Default::default(), Handler).unwrap();
 
     drop(pool.get().ok().unwrap());
 
@@ -192,7 +192,7 @@ fn test_initialization_failure() {
     let manager = NthConnectFailManager {
         n: Mutex::new(0),
     };
-    r2d2::Pool::new(config, manager, Box::new(r2d2::NoopErrorHandler)).err().unwrap();
+    r2d2::Pool::new(config, manager).err().unwrap();
 }
 
 #[test]
@@ -201,7 +201,7 @@ fn test_get_timeout() {
         .pool_size(1)
         .connection_timeout(Duration::seconds(1))
         .build();
-    let pool = r2d2::Pool::new(config, OkManager, Box::new(r2d2::NoopErrorHandler)).unwrap();
+    let pool = r2d2::Pool::new(config, OkManager).unwrap();
     let _c = pool.get().unwrap();
     pool.get().err().unwrap();
 }
@@ -209,7 +209,6 @@ fn test_get_timeout() {
 #[test]
 fn test_get_arc() {
     let config = r2d2::Config::default();
-    let error_handler = Box::new(r2d2::NoopErrorHandler);
-    let pool = Arc::new(r2d2::Pool::new(config, OkManager, error_handler).unwrap());
+    let pool = Arc::new(r2d2::Pool::new(config, OkManager).unwrap());
     r2d2::Pool::get_arc(pool).unwrap();
 }

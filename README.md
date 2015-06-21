@@ -30,11 +30,12 @@ extern crate r2d2;
 extern crate r2d2_foodb;
 
 fn main() {
-    let config = r2d2::Config::default();
+    let config = r2d2::Config::builder()
+        .error_handler(Box::new(r2d2::LoggingErrorHandler))
+        .build();
     let manager = r2d2_foodb::FooConnectionManager::new("localhost:1234");
-    let error_handler = Box::new(r2d2::LoggingErrorHandler);
 
-    let pool = Arc::new(r2d2::Pool::new(config, manager, error_handler).unwrap());
+    let pool = Arc::new(r2d2::Pool::new(config, manager).unwrap());
 
     for _ in 0..20i32 {
         let pool = pool.clone();

@@ -83,9 +83,8 @@ struct PoolInternals<C> {
 }
 
 struct SharedPool<M> where M: ConnectionManager {
-    config: Config,
+    config: Config<M::Error>,
     manager: M,
-    error_handler: Box<ErrorHandler<M::Error>>,
     internals: Mutex<PoolInternals<M::Connection>>,
     cond: Condvar,
     thread_pool: ScheduledThreadPool,
@@ -103,7 +102,7 @@ fn add_connection<M>(delay: Duration, shared: &Arc<SharedPool<M>>) where M: Conn
                 shared.cond.notify_one();
             }
             Err(err) => {
-                shared.error_handler.handle_error(err);
+                shared.config.error_handler().handle_error(err);
                 add_connection(Duration::seconds(1), &shared);
             },
         }
@@ -169,10 +168,7 @@ impl<M> Pool<M> where M: ConnectionManager {
     /// Returns an `Err` value if `initialization_fail_fast` is set to true in
     /// the configuration and the pool is unable to open all of its
     /// connections.
-    pub fn new(config: Config,
-               manager: M,
-               error_handler: Box<ErrorHandler<M::Error>>)
-               -> Result<Pool<M>, InitializationError> {
+    pub fn new(config: Config<M::Error>, manager: M) -> Result<Pool<M>, InitializationError> {
         let internals = PoolInternals {
             conns: VecDeque::new(),
             num_conns: 0,
@@ -182,7 +178,6 @@ impl<M> Pool<M> where M: ConnectionManager {
             thread_pool: ScheduledThreadPool::new(config.helper_threads() as usize),
             config: config,
             manager: manager,
-            error_handler: error_handler,
             internals: Mutex::new(internals),
             cond: Condvar::new(),
         });
@@ -222,7 +217,7 @@ impl<M> Pool<M> where M: ConnectionManager {
 
                     if self.shared.config.test_on_check_out() {
                         if let Err(e) = self.shared.manager.is_valid(&mut conn) {
-                            self.shared.error_handler.handle_error(e);
+                            self.shared.config.error_handler().handle_error(e);
                             internals = self.shared.internals.lock().unwrap();
                             self.handle_broken(&mut internals);
                             continue
