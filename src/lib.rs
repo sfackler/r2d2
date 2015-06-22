@@ -59,7 +59,7 @@ pub trait HandleError<E>: Send+Sync+'static {
     fn handle_error(&self, error: E);
 }
 
-/// A `HandleError` which does nothing.
+/// A `HandleError` implementation which does nothing.
 #[derive(Copy, Clone, Debug)]
 pub struct NoopErrorHandler;
 
@@ -67,13 +67,13 @@ impl<E> HandleError<E> for NoopErrorHandler {
     fn handle_error(&self, _: E) {}
 }
 
-/// An `ErrorHandler` which logs at the error level.
+/// A `HandleError` implementation which logs at the error level.
 #[derive(Copy, Clone, Debug)]
 pub struct LoggingErrorHandler;
 
-impl<E> HandleError<E> for LoggingErrorHandler where E: fmt::Debug {
+impl<E> HandleError<E> for LoggingErrorHandler where E: Error {
     fn handle_error(&self, error: E) {
-        error!("{:?}", error);
+        error!("{}", error);
     }
 }
 
