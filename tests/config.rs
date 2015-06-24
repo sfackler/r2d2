@@ -1,4 +1,3 @@
-use time::Duration;
 use r2d2::Config;
 
 #[test]
@@ -8,13 +7,13 @@ fn builder() {
         .helper_threads(2)
         .test_on_check_out(false)
         .initialization_fail_fast(false)
-        .connection_timeout(Duration::seconds(3))
+        .connection_timeout_ms(3 * 1000)
         .build();
     assert_eq!(1, config.pool_size());
     assert_eq!(2, config.helper_threads());
     assert_eq!(false, config.test_on_check_out());
     assert_eq!(false, config.initialization_fail_fast());
-    assert_eq!(Duration::seconds(3), config.connection_timeout());
+    assert_eq!(3 * 1000, config.connection_timeout_ms());
 }
 
 #[test]
@@ -30,13 +29,13 @@ fn builder_zero_helper_threads() {
 }
 
 #[test]
-#[should_panic(expected = "connection_timeout must be positive")]
+#[should_panic(expected = "connection_timeout_ms must be positive")]
 fn builder_zero_connection_timeout() {
-    Config::<(), ()>::builder().connection_timeout(Duration::zero());
+    Config::<(), ()>::builder().connection_timeout_ms(0);
 }
 
 #[test]
-#[should_panic(expected = "connection_timeout must be positive")]
+#[should_panic(expected = "connection_timeout_ms must be positive")]
 fn builder_negative_connection_timeout() {
-    Config::<(), ()>::builder().connection_timeout(Duration::seconds(-1));
+    Config::<(), ()>::builder().connection_timeout_ms(0);
 }

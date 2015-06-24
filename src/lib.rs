@@ -222,7 +222,8 @@ impl<M> Pool<M> where M: ManageConnection {
         }
 
         if shared.config.initialization_fail_fast() {
-            let end = SteadyTime::now() + shared.config.connection_timeout();
+            let end = SteadyTime::now() +
+                Duration::milliseconds(shared.config.connection_timeout_ms() as i64);
             let mut internals = shared.internals.lock().unwrap();
 
             while internals.num_conns != shared.config.pool_size() {
@@ -242,7 +243,8 @@ impl<M> Pool<M> where M: ManageConnection {
     }
 
     fn get_inner(&self) -> Result<M::Connection, GetTimeout> {
-        let end = SteadyTime::now() + self.shared.config.connection_timeout();
+        let end = SteadyTime::now() +
+            Duration::milliseconds(self.shared.config.connection_timeout_ms() as i64);
         let mut internals = self.shared.internals.lock().unwrap();
 
         loop {

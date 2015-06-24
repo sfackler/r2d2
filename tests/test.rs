@@ -1,12 +1,10 @@
 extern crate r2d2;
-extern crate time;
 
 use std::default::Default;
 use std::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, Ordering};
 use std::sync::mpsc::{self, SyncSender, Receiver};
 use std::sync::{Mutex, Arc};
 use std::thread;
-use time::Duration;
 
 mod config;
 
@@ -187,7 +185,7 @@ fn test_drop_on_broken() {
 #[test]
 fn test_initialization_failure() {
     let config = r2d2::Config::builder()
-        .connection_timeout(Duration::seconds(1))
+        .connection_timeout_ms(1000)
         .build();
     let manager = NthConnectFailManager {
         n: Mutex::new(0),
@@ -199,7 +197,7 @@ fn test_initialization_failure() {
 fn test_get_timeout() {
     let config = r2d2::Config::builder()
         .pool_size(1)
-        .connection_timeout(Duration::seconds(1))
+        .connection_timeout_ms(1000)
         .build();
     let pool = r2d2::Pool::new(config, OkManager).unwrap();
     let _c = pool.get().unwrap();
