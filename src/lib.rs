@@ -1,4 +1,42 @@
-//! A library providing a generic connection pool.
+//! A generic connection pool.
+//!
+//! Opening a new database connection every time one is needed is both
+//! inefficient and can lead to resource exhaustion under high traffic
+//! conditions. A connection pool maintains a set of open connections to a
+//! database, handing them out for repeated use.
+//!
+//! r2d2 is agnostic to the connection type it is managing. Implementors of the
+//! `ManageConnection` trait provide the database-specific logic to create and
+//! check the health of connections.
+//!
+//! # Example
+//!
+//! Using an imaginary "foodb" database.
+//!
+//! ```rust,ignore
+//! use std::thread;
+//!
+//! extern crate r2d2;
+//! extern crate r2d2_foodb;
+//!
+//! fn main() {
+//!     let config = r2d2::Config::builder()
+//!         .error_handler(Box::new(r2d2::LoggingErrorHandler))
+//!         .build();
+//!     let manager = r2d2_foodb::FooManageConnection::new("localhost:1234");
+//!
+//!     let pool = r2d2::Pool::new(config, manager).unwrap();
+//!
+//!     for _ in 0..20i32 {
+//!         let pool = pool.clone();
+//!         thread::spawn(move || {
+//!             let conn = pool.get().unwrap();
+//!             // use the connection
+//!             // it will be returned to the pool when it falls out of scope.
+//!         })
+//!     }
+//! }
+//! ```
 #![warn(missing_docs)]
 #![doc(html_root_url="https://sfackler.github.io/r2d2/doc/v0.5.8")]
 
