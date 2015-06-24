@@ -23,7 +23,7 @@
 //!     let config = r2d2::Config::builder()
 //!         .error_handler(Box::new(r2d2::LoggingErrorHandler))
 //!         .build();
-//!     let manager = r2d2_foodb::FooManageConnection::new("localhost:1234");
+//!     let manager = r2d2_foodb::FooConnectionManager::new("localhost:1234");
 //!
 //!     let pool = r2d2::Pool::new(config, manager).unwrap();
 //!
