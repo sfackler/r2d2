@@ -145,8 +145,8 @@ impl<M> Drop for Pool<M> where M: ManageConnection {
     }
 }
 
+/// Returns a new `Pool` referencing the same state as `self`.
 impl<M> Clone for Pool<M> where M: ManageConnection {
-    /// Returns a new `Pool` referencing the same state as `self`.
     fn clone(&self) -> Pool<M> {
         Pool {
             shared: self.shared.clone(),
