@@ -1,12 +1,10 @@
 extern crate r2d2;
-extern crate time;
 
 use std::default::Default;
 use std::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, Ordering};
 use std::sync::mpsc::{self, SyncSender, Receiver};
 use std::sync::{Mutex, Arc};
 use std::thread;
-use time::Duration;
 
 mod config;
 
@@ -15,7 +13,7 @@ struct FakeConnection;
 
 struct OkManager;
 
-impl r2d2::ConnectionManager for OkManager {
+impl r2d2::ManageConnection for OkManager {
     type Connection = FakeConnection;
     type Error = ();
 
@@ -36,7 +34,7 @@ struct NthConnectFailManager {
     n: Mutex<u32>,
 }
 
-impl r2d2::ConnectionManager for NthConnectFailManager {
+impl r2d2::ManageConnection for NthConnectFailManager {
     type Connection = FakeConnection;
     type Error = ();
 
@@ -63,9 +61,9 @@ impl r2d2::ConnectionManager for NthConnectFailManager {
 fn test_pool_size_ok() {
     let config = r2d2::Config::builder().pool_size(5).build();
     let manager = NthConnectFailManager { n: Mutex::new(5) };
-    let pool = r2d2::Pool::new(config, manager, Box::new(r2d2::NoopErrorHandler)).unwrap();
+    let pool = r2d2::Pool::new(config, manager).unwrap();
     let mut conns = vec![];
-    for _ in 0..config.pool_size() {
+    for _ in 0..5 {
         conns.push(pool.get().ok().unwrap());
     }
 }
@@ -73,7 +71,7 @@ fn test_pool_size_ok() {
 #[test]
 fn test_acquire_release() {
     let config = r2d2::Config::builder().pool_size(2).build();
-    let pool = r2d2::Pool::new(config, OkManager, Box::new(r2d2::NoopErrorHandler)).unwrap();
+    let pool = r2d2::Pool::new(config, OkManager).unwrap();
 
     let conn1 = pool.get().ok().unwrap();
     let conn2 = pool.get().ok().unwrap();
@@ -97,7 +95,7 @@ fn test_issue_2_unlocked_during_is_valid() {
         r: Mutex<Receiver<()>>,
     }
 
-    impl r2d2::ConnectionManager for BlockingChecker {
+    impl r2d2::ManageConnection for BlockingChecker {
         type Connection = FakeConnection;
         type Error = ();
 
@@ -130,7 +128,7 @@ fn test_issue_2_unlocked_during_is_valid() {
         s: Mutex::new(s1),
         r: Mutex::new(r2),
     };
-    let pool = Arc::new(r2d2::Pool::new(config, manager, Box::new(r2d2::NoopErrorHandler)).unwrap());
+    let pool = Arc::new(r2d2::Pool::new(config, manager).unwrap());
 
     let p2 = pool.clone();
     let t = thread::spawn(move || {
@@ -160,7 +158,7 @@ fn test_drop_on_broken() {
 
     struct Handler;
 
-    impl r2d2::ConnectionManager for Handler {
+    impl r2d2::ManageConnection for Handler {
         type Connection = Connection;
         type Error = ();
 
@@ -177,7 +175,7 @@ fn test_drop_on_broken() {
         }
     }
 
-    let pool = r2d2::Pool::new(Default::default(), Handler, Box::new(r2d2::NoopErrorHandler)).unwrap();
+    let pool = r2d2::Pool::new(Default::default(), Handler).unwrap();
 
     drop(pool.get().ok().unwrap());
 
@@ -187,29 +185,76 @@ fn test_drop_on_broken() {
 #[test]
 fn test_initialization_failure() {
     let config = r2d2::Config::builder()
-        .connection_timeout(Duration::seconds(1))
+        .connection_timeout_ms(1000)
         .build();
     let manager = NthConnectFailManager {
         n: Mutex::new(0),
     };
-    r2d2::Pool::new(config, manager, Box::new(r2d2::NoopErrorHandler)).err().unwrap();
+    r2d2::Pool::new(config, manager).err().unwrap();
 }
 
 #[test]
 fn test_get_timeout() {
     let config = r2d2::Config::builder()
         .pool_size(1)
-        .connection_timeout(Duration::seconds(1))
+        .connection_timeout_ms(1000)
         .build();
-    let pool = r2d2::Pool::new(config, OkManager, Box::new(r2d2::NoopErrorHandler)).unwrap();
+    let pool = r2d2::Pool::new(config, OkManager).unwrap();
     let _c = pool.get().unwrap();
     pool.get().err().unwrap();
 }
 
 #[test]
-fn test_get_arc() {
-    let config = r2d2::Config::default();
-    let error_handler = Box::new(r2d2::NoopErrorHandler);
-    let pool = Arc::new(r2d2::Pool::new(config, OkManager, error_handler).unwrap());
-    r2d2::Pool::get_arc(pool).unwrap();
+fn test_connection_customizer() {
+    static DROPPED: AtomicBool = ATOMIC_BOOL_INIT;
+    DROPPED.store(false, Ordering::SeqCst);
+
+    struct Connection(i32);
+
+    impl Drop for Connection {
+        fn drop(&mut self) {
+            DROPPED.store(true, Ordering::SeqCst);
+        }
+    }
+
+    struct Handler;
+
+    impl r2d2::ManageConnection for Handler {
+        type Connection = Connection;
+        type Error = ();
+
+        fn connect(&self) -> Result<Connection, ()> {
+            Ok(Connection(0))
+        }
+
+        fn is_valid(&self, _: &mut Connection) -> Result<(), ()> {
+            Ok(())
+        }
+
+        fn has_broken(&self, _: &mut Connection) -> bool {
+            true
+        }
+    }
+
+    struct Customizer;
+
+    impl r2d2::CustomizeConnection<Connection, ()> for Customizer {
+        fn on_acquire(&self, conn: &mut Connection) -> Result<(), ()> {
+            if !DROPPED.load(Ordering::SeqCst) {
+                Err(())
+            } else {
+                conn.0 = 1;
+                Ok(())
+            }
+        }
+    }
+
+    let config = r2d2::Config::builder()
+        .connection_customizer(Box::new(Customizer))
+        .build();
+    let pool = r2d2::Pool::new(config, Handler).unwrap();
+
+    let conn = pool.get().unwrap();
+    assert_eq!(1, conn.0);
+    assert!(DROPPED.load(Ordering::SeqCst));
 }
