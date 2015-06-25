@@ -17,7 +17,6 @@ impl<C, E> Builder<C, E> {
     /// Constructs a new `Builder`.
     ///
     /// Parameters are initialized with their default values.
-    #[inline]
     pub fn new() -> Builder<C, E> {
         Builder {
             c: Config::default(),
@@ -29,7 +28,6 @@ impl<C, E> Builder<C, E> {
     /// # Panics
     ///
     /// Panics if `pool_size` is 0.
-    #[inline]
     pub fn pool_size(mut self, pool_size: u32) -> Builder<C, E> {
         assert!(pool_size > 0, "pool_size must be positive");
         self.c.pool_size = pool_size;
@@ -41,7 +39,6 @@ impl<C, E> Builder<C, E> {
     /// # Panics
     ///
     /// Panics if `helper_threads` is 0.
-    #[inline]
     pub fn helper_threads(mut self, helper_threads: u32) -> Builder<C, E> {
         assert!(helper_threads > 0, "helper_threads must be positive");
         self.c.helper_threads = helper_threads;
@@ -49,14 +46,12 @@ impl<C, E> Builder<C, E> {
     }
 
     /// Sets `test_on_check_out`.
-    #[inline]
     pub fn test_on_check_out(mut self, test_on_check_out: bool) -> Builder<C, E> {
         self.c.test_on_check_out = test_on_check_out;
         self
     }
 
     /// Sets `initialization_fail_fast`.
-    #[inline]
     pub fn initialization_fail_fast(mut self, initialization_fail_fast: bool) -> Builder<C, E> {
         self.c.initialization_fail_fast = initialization_fail_fast;
         self
@@ -67,7 +62,6 @@ impl<C, E> Builder<C, E> {
     /// # Panics
     ///
     /// Panics if `connection_timeout_ms` is 0.
-    #[inline]
     pub fn connection_timeout_ms(mut self, connection_timeout_ms: u32) -> Builder<C, E> {
         assert!(connection_timeout_ms > 0, "connection_timeout_ms must be positive");
         self.c.connection_timeout_ms = connection_timeout_ms;
@@ -75,14 +69,12 @@ impl<C, E> Builder<C, E> {
     }
 
     /// Sets the `error_handler`.
-    #[inline]
     pub fn error_handler(mut self, error_handler: Box<HandleError<E>>) -> Builder<C, E> {
         self.c.error_handler = error_handler;
         self
     }
 
     /// Sets the `connection_customizer`.
-    #[inline]
     pub fn connection_customizer(mut self, connection_customizer: Box<CustomizeConnection<C, E>>)
                                  -> Builder<C, E> {
         self.c.connection_customizer = connection_customizer;
@@ -90,7 +82,6 @@ impl<C, E> Builder<C, E> {
     }
 
     /// Consumes the `Builder`, turning it into a `Config`.
-    #[inline]
     pub fn build(self) -> Config<C, E> {
         self.c
     }
@@ -123,7 +114,6 @@ impl<C, E> fmt::Debug for Config<C, E> {
 }
 
 impl<C, E> Default for Config<C, E> {
-    #[inline]
     fn default() -> Config<C, E> {
         Config {
             pool_size: 10,
@@ -142,7 +132,6 @@ impl<C, E> Config<C, E> {
     /// `Config`.
     ///
     /// All parameters are initialized to their default values.
-    #[inline]
     pub fn builder() -> Builder<C, E> {
         Builder::new()
     }
@@ -150,7 +139,6 @@ impl<C, E> Config<C, E> {
     /// The number of connections managed by the pool.
     ///
     /// Defaults to 10.
-    #[inline]
     pub fn pool_size(&self) -> u32 {
         self.pool_size
     }
@@ -159,7 +147,6 @@ impl<C, E> Config<C, E> {
     /// operations such as connection creation and health checks.
     ///
     /// Defaults to 3.
-    #[inline]
     pub fn helper_threads(&self) -> u32 {
         self.helper_threads
     }
@@ -168,7 +155,6 @@ impl<C, E> Config<C, E> {
     /// `ConnectionManager::is_valid` before it is checked out of the pool.
     ///
     /// Defaults to true.
-    #[inline]
     pub fn test_on_check_out(&self) -> bool {
         self.test_on_check_out
     }
@@ -177,16 +163,14 @@ impl<C, E> Config<C, E> {
     /// returning an error if they could not be created.
     ///
     /// Defaults to true.
-    #[inline]
     pub fn initialization_fail_fast(&self) -> bool {
         self.initialization_fail_fast
     }
 
-    /// Calls to `Pool::get` will wait for this many milliseconds for a
-    /// connection to become available before returning an error.
+    /// Calls to `Pool::get` will wait this many milliseconds for a connection
+    /// to become available before returning an error.
     ///
     /// Defaults to 30 seconds.
-    #[inline]
     pub fn connection_timeout_ms(&self) -> u32 {
         self.connection_timeout_ms
     }
@@ -194,7 +178,6 @@ impl<C, E> Config<C, E> {
     /// The handler for error reported in the pool.
     ///
     /// Defaults to `r2d2::NoopErrorHandler`.
-    #[inline]
     pub fn error_handler(&self) -> &HandleError<E> {
         &*self.error_handler
     }
@@ -202,7 +185,6 @@ impl<C, E> Config<C, E> {
     /// The connection customizer used by the pool.
     ///
     /// Defaults to `r2d2::NoopConnectionCustomizer`.
-    #[inline]
     pub fn connection_customizer(&self) -> &CustomizeConnection<C, E> {
         &*self.connection_customizer
     }
