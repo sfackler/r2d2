@@ -62,11 +62,11 @@ impl<C, E> Builder<C, E> {
         self
     }
 
-    /// Sets `connection_timeout` to the specified number of milliseconds.
+    /// Sets `connection_timeout_ms` to the specified number of milliseconds.
     ///
     /// # Panics
     ///
-    /// Panics if `connection_timeout` is nonpositive.
+    /// Panics if `connection_timeout_ms` is 0.
     #[inline]
     pub fn connection_timeout_ms(mut self, connection_timeout_ms: u32) -> Builder<C, E> {
         assert!(connection_timeout_ms > 0, "connection_timeout_ms must be positive");
