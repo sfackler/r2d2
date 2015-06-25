@@ -2,7 +2,7 @@
 use std::fmt;
 use debug_builders::DebugStruct;
 
-use {HandleError, NoopErrorHandler, CustomizeConnection, NoopConnectionCustomizer};
+use {HandleError, NopErrorHandler, CustomizeConnection, NopConnectionCustomizer};
 
 /// A builder for `Config`.
 ///
@@ -121,8 +121,8 @@ impl<C, E> Default for Config<C, E> {
             test_on_check_out: true,
             initialization_fail_fast: true,
             connection_timeout_ms: 30 * 1000,
-            error_handler: Box::new(NoopErrorHandler),
-            connection_customizer: Box::new(NoopConnectionCustomizer),
+            error_handler: Box::new(NopErrorHandler),
+            connection_customizer: Box::new(NopConnectionCustomizer),
         }
     }
 }
@@ -177,14 +177,14 @@ impl<C, E> Config<C, E> {
 
     /// The handler for error reported in the pool.
     ///
-    /// Defaults to `r2d2::NoopErrorHandler`.
+    /// Defaults to `r2d2::NopErrorHandler`.
     pub fn error_handler(&self) -> &HandleError<E> {
         &*self.error_handler
     }
 
     /// The connection customizer used by the pool.
     ///
-    /// Defaults to `r2d2::NoopConnectionCustomizer`.
+    /// Defaults to `r2d2::NopConnectionCustomizer`.
     pub fn connection_customizer(&self) -> &CustomizeConnection<C, E> {
         &*self.connection_customizer
     }

@@ -99,9 +99,9 @@ pub trait HandleError<E>: Send+Sync+'static {
 
 /// A `HandleError` implementation which does nothing.
 #[derive(Copy, Clone, Debug)]
-pub struct NoopErrorHandler;
+pub struct NopErrorHandler;
 
-impl<E> HandleError<E> for NoopErrorHandler {
+impl<E> HandleError<E> for NopErrorHandler {
     fn handle_error(&self, _: E) {}
 }
 
@@ -133,9 +133,9 @@ pub trait CustomizeConnection<C, E>: Send+Sync+'static {
 
 /// A `CustomizeConnection` which does nothing.
 #[derive(Copy, Clone, Debug)]
-pub struct NoopConnectionCustomizer;
+pub struct NopConnectionCustomizer;
 
-impl<C, E> CustomizeConnection<C, E> for NoopConnectionCustomizer {}
+impl<C, E> CustomizeConnection<C, E> for NopConnectionCustomizer {}
 
 struct PoolInternals<C> {
     conns: VecDeque<C>,
