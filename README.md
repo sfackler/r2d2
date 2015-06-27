@@ -18,10 +18,10 @@ check the health of connections.
 
 A (possibly not exhaustive) list of adaptors for different databases:
 
-| Database | Database Crate | Adaptor Crate |
----------------------------------------------
-| Postgres | [postgres](https://github.com/sfackler/rust-postgres) | [r2d2-postgres](https://github.com/sfackler/r2d2-postgres) |
-| Redis | [redis](https://github.com/mitsuhiko/redis-rs) | [r2d2-redis](https://github.com/nevdelap/r2d2-redis)
+Database | Database Crate                                        | Adaptor Crate
+-------- | ----------------------------------------------------- | -------------
+Postgres | [postgres](https://github.com/sfackler/rust-postgres) | [r2d2-postgres](https://github.com/sfackler/r2d2-postgres)
+Redis    | [redis](https://github.com/mitsuhiko/redis-rs)        | [r2d2-redis](https://github.com/nevdelap/r2d2-redis)
 
 # Example
 
