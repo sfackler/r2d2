@@ -20,6 +20,10 @@ The [r2d2-postgres](https://github.com/sfackler/r2d2-postgres) crate provides
 a `ManageConnection` implementation for
 [rust-postgres](https://github.com/sfackler/rust-postgres).
 
+The [r2d2-redis](https://github.com/nevdelap/r2d2-redis) crate provides a
+`ManageConnection` implementation for
+[redis-rs](https://github.com/mitsuhiko/redis-rs).
+
 # Example
 
 Using an imaginary "foodb" database.
