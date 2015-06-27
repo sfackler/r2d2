@@ -16,13 +16,12 @@ r2d2 is agnostic to the connection type it is managing. Implementors of the
 `ManageConnection` trait provide the database-specific logic to create and
 check the health of connections.
 
-The [r2d2-postgres](https://github.com/sfackler/r2d2-postgres) crate provides
-a `ManageConnection` implementation for
-[rust-postgres](https://github.com/sfackler/rust-postgres).
+A (possibly not exhaustive) list of adaptors for different databases:
 
-The [r2d2-redis](https://github.com/nevdelap/r2d2-redis) crate provides a
-`ManageConnection` implementation for
-[redis-rs](https://github.com/mitsuhiko/redis-rs).
+| Database | Database Crate | Adaptor Crate |
+---------------------------------------------
+| Postgres | [postgres](https://github.com/sfackler/rust-postgres) | [r2d2-postgres](https://github.com/sfackler/r2d2-postgres) |
+| Redis | [redis](https://github.com/mitsuhiko/redis-rs) | [r2d2-redis](https://github.com/nevdelap/r2d2-redis)
 
 # Example
 
