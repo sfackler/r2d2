@@ -43,9 +43,7 @@
 #[macro_use]
 extern crate log;
 extern crate time;
-extern crate debug_builders;
 
-use debug_builders::DebugStruct;
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fmt;
@@ -194,7 +192,7 @@ impl<M> Clone for Pool<M> where M: ManageConnection {
 
 impl<M> fmt::Debug for Pool<M> where M: ManageConnection + fmt::Debug {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        DebugStruct::new(fmt, "Pool")
+        fmt.debug_struct("Pool")
             .field("idle_connections", &self.shared.internals.lock().unwrap().conns.len())
             .field("config", &self.shared.config)
             .field("manager", &self.shared.manager)
@@ -358,7 +356,7 @@ pub struct PooledConnection<M> where M: ManageConnection {
 impl<M> fmt::Debug for PooledConnection<M>
         where M: ManageConnection + fmt::Debug, M::Connection: fmt::Debug {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        DebugStruct::new(fmt, "PooledConnection")
+        fmt.debug_struct("PooledConnection")
             .field("pool", &self.pool)
             .field("connection", self.conn.as_ref().unwrap())
             .finish()

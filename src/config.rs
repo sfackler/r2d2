@@ -1,7 +1,6 @@
 //! Pool configuration.
 use std::fmt;
 use std::time::Duration;
-use debug_builders::DebugStruct;
 
 use {HandleError, NopErrorHandler, CustomizeConnection, NopConnectionCustomizer};
 
@@ -112,7 +111,7 @@ pub struct Config<C, E> {
 
 impl<C, E> fmt::Debug for Config<C, E> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        DebugStruct::new(fmt, "Config")
+        fmt.debug_struct("Config")
             .field("pool_size", &self.pool_size)
             .field("helper_threads", &self.helper_threads)
             .field("test_on_check_out", &self.test_on_check_out)
