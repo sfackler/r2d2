@@ -10,7 +10,7 @@ use std::thread;
 mod config;
 
 #[derive(Debug, PartialEq)]
-struct FakeConnection;
+struct FakeConnection(bool);
 
 struct OkManager;
 
@@ -19,7 +19,7 @@ impl r2d2::ManageConnection for OkManager {
     type Error = ();
 
     fn connect(&self) -> Result<FakeConnection, ()> {
-        Ok(FakeConnection)
+        Ok(FakeConnection(true))
     }
 
     fn is_valid(&self, _: &mut FakeConnection) -> Result<(), ()> {
@@ -43,7 +43,7 @@ impl r2d2::ManageConnection for NthConnectFailManager {
         let mut n = self.n.lock().unwrap();
         if *n > 0 {
             *n -= 1;
-            Ok(FakeConnection)
+            Ok(FakeConnection(true))
         } else {
             Err(())
         }
@@ -101,7 +101,7 @@ fn test_issue_2_unlocked_during_is_valid() {
         type Error = ();
 
         fn connect(&self) -> Result<FakeConnection, ()> {
-            Ok(FakeConnection)
+            Ok(FakeConnection(true))
         }
 
         fn is_valid(&self, _: &mut FakeConnection) -> Result<(), ()> {
