@@ -1,6 +1,6 @@
 //! Pool configuration.
 use std::fmt;
-use debug_builders::DebugStruct;
+use std::time::Duration;
 
 use {HandleError, NopErrorHandler, CustomizeConnection, NopConnectionCustomizer};
 
@@ -57,15 +57,23 @@ impl<C, E> Builder<C, E> {
         self
     }
 
-    /// Sets `connection_timeout_ms` to the specified number of milliseconds.
+    /// Sets `connection_timeout` to the specified duration.
     ///
     /// # Panics
     ///
-    /// Panics if `connection_timeout_ms` is 0.
-    pub fn connection_timeout_ms(mut self, connection_timeout_ms: u32) -> Builder<C, E> {
-        assert!(connection_timeout_ms > 0, "connection_timeout_ms must be positive");
-        self.c.connection_timeout_ms = connection_timeout_ms;
+    /// Panics if `connection_timeout` is the zero duration
+    pub fn connection_timeout(mut self, connection_timeout: Duration) -> Builder<C, E> {
+        assert!(connection_timeout.as_secs() > 0 || connection_timeout.subsec_nanos() > 0,
+                "connection_timeout must be positive");
+        self.c.connection_timeout = connection_timeout;
         self
+    }
+
+    /// # Deprecated
+    ///
+    /// Use `connection_timeout` instead.
+    pub fn connection_timeout_ms(self, connection_timeout_ms: u32) -> Builder<C, E> {
+        self.connection_timeout(Duration::from_millis(connection_timeout_ms as u64))
     }
 
     /// Sets the `error_handler`.
@@ -96,19 +104,19 @@ pub struct Config<C, E> {
     helper_threads: u32,
     test_on_check_out: bool,
     initialization_fail_fast: bool,
-    connection_timeout_ms: u32,
+    connection_timeout: Duration,
     error_handler: Box<HandleError<E>>,
     connection_customizer: Box<CustomizeConnection<C, E>>,
 }
 
 impl<C, E> fmt::Debug for Config<C, E> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        DebugStruct::new(fmt, "Config")
+        fmt.debug_struct("Config")
             .field("pool_size", &self.pool_size)
             .field("helper_threads", &self.helper_threads)
             .field("test_on_check_out", &self.test_on_check_out)
             .field("initialization_fail_fast", &self.initialization_fail_fast)
-            .field("connection_timeout_ms", &self.connection_timeout_ms)
+            .field("connection_timeout", &self.connection_timeout)
             .finish()
     }
 }
@@ -120,7 +128,7 @@ impl<C, E> Default for Config<C, E> {
             helper_threads: 3,
             test_on_check_out: true,
             initialization_fail_fast: true,
-            connection_timeout_ms: 30 * 1000,
+            connection_timeout: Duration::from_secs(30),
             error_handler: Box::new(NopErrorHandler),
             connection_customizer: Box::new(NopConnectionCustomizer),
         }
@@ -167,12 +175,20 @@ impl<C, E> Config<C, E> {
         self.initialization_fail_fast
     }
 
-    /// Calls to `Pool::get` will wait this many milliseconds for a connection
-    /// to become available before returning an error.
+    /// Calls to `Pool::get` will wait this long for a connection to become
+    /// available before returning an error.
     ///
     /// Defaults to 30 seconds.
+    pub fn connection_timeout(&self) -> Duration {
+        self.connection_timeout
+    }
+
+    /// # Deprecated
+    ///
+    /// Use `connection_timeout` instead.
     pub fn connection_timeout_ms(&self) -> u32 {
-        self.connection_timeout_ms
+        self.connection_timeout.as_secs() as u32 * 1000 +
+            self.connection_timeout.subsec_nanos() / 1_000_000
     }
 
     /// The handler for error reported in the pool.
