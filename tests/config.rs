@@ -1,3 +1,4 @@
+use std::time::Duration;
 use r2d2::Config;
 
 #[test]
@@ -29,13 +30,7 @@ fn builder_zero_helper_threads() {
 }
 
 #[test]
-#[should_panic(expected = "connection_timeout_ms must be positive")]
+#[should_panic(expected = "connection_timeout must be positive")]
 fn builder_zero_connection_timeout() {
-    Config::<(), ()>::builder().connection_timeout_ms(0);
-}
-
-#[test]
-#[should_panic(expected = "connection_timeout_ms must be positive")]
-fn builder_negative_connection_timeout() {
-    Config::<(), ()>::builder().connection_timeout_ms(0);
+    Config::<(), ()>::builder().connection_timeout(Duration::from_secs(0));
 }

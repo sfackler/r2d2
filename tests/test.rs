@@ -4,6 +4,7 @@ use std::default::Default;
 use std::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, Ordering};
 use std::sync::mpsc::{self, SyncSender, Receiver};
 use std::sync::{Mutex, Arc};
+use std::time::Duration;
 use std::thread;
 
 mod config;
@@ -197,7 +198,7 @@ fn test_initialization_failure() {
 fn test_get_timeout() {
     let config = r2d2::Config::builder()
         .pool_size(1)
-        .connection_timeout_ms(1000)
+        .connection_timeout(Duration::from_secs(1))
         .build();
     let pool = r2d2::Pool::new(config, OkManager).unwrap();
     let _c = pool.get().unwrap();
