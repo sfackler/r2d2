@@ -98,7 +98,7 @@ impl ScheduledThreadPool {
             shared: Arc::new(shared),
         };
 
-        for _ in (0..size) {
+        for _ in 0..size {
             let mut worker = Worker {
                 shared: pool.shared.clone(),
             };
