@@ -3,11 +3,6 @@ rust:
 - nightly
 - beta
 - stable
-env:
-  global:
-  - secure: LD3W5ilCQq3FkBt9hRZjpzVc6WITcjDzW93JGN2Rv364BiWtFCoCUZCD0An9zbM0OirJ0qoEK/HlikF3wrwAkyJaTB5EVwxjZ3SKlJ6VbxHxmgnripaSYR7fNOGlUjLWS5wvm0gRz61wKh7xI2Mwm3xbraujYkaafX0akZMUJ7M=
 script:
 - cargo test
 - cargo doc --no-deps
-after_success:
-- test $TRAVIS_PULL_REQUEST == "false" && test $TRAVIS_BRANCH == "master" && test $TRAVIS_RUST_VERSION == "stable" && ./.travis/update_docs.sh
