@@ -16,15 +16,16 @@ r2d2 is agnostic to the connection type it is managing. Implementors of the
 `ManageConnection` trait provide the database-specific logic to create and
 check the health of connections.
 
-A (possibly not exhaustive) list of adaptors for different databases:
+A (possibly not exhaustive) list of adaptors for different backends:
 
-Database | Database Crate                                                 | Adaptor Crate
--------- | -------------------------------------------------------------- | -------------
-Postgres | [postgres](https://github.com/sfackler/rust-postgres)          | [r2d2-postgres](https://github.com/sfackler/r2d2-postgres)
-Redis    | [redis](https://github.com/mitsuhiko/redis-rs)                 | [r2d2-redis](https://github.com/nevdelap/r2d2-redis)
-MySQL    | [mysql](https://github.com/blackbeam/rust-mysql-simple)        | [r2d2-mysql](https://github.com/outersky/r2d2-mysql)
-SQLite   | [rusqlite](https://github.com/jgallagher/rusqlite)             | [r2d2-sqlite](https://github.com/ivanceras/r2d2-sqlite)
-Neo4j    | [rusted-cypher](https://github.com/livioribeiro/rusted-cypher) | [r2d2-cypher](https://github.com/flosse/r2d2-cypher)
+Backend                                                             | Adaptor Crate
+------------------------------------------------------------------- | -------------
+[rust-postgres](https://github.com/sfackler/rust-postgres)          | [r2d2-postgres](https://github.com/sfackler/r2d2-postgres)
+[redis-rs](https://github.com/mitsuhiko/redis-rs)                   | [r2d2-redis](https://github.com/nevdelap/r2d2-redis)
+[rust-mysql-simple](https://github.com/blackbeam/rust-mysql-simple) | [r2d2-mysql](https://github.com/outersky/r2d2-mysql)
+[rusqlite](https://github.com/jgallagher/rusqlite)                  | [r2d2-sqlite](https://github.com/ivanceras/r2d2-sqlite)
+[rusted-cypher](https://github.com/livioribeiro/rusted-cypher)      | [r2d2-cypher](https://github.com/flosse/r2d2-cypher)
+[diesel](https://github.com/sgrif/diesel)                           | [r2d2-diesel](https://github.com/sgrif/r2d2-diesel)
 
 # Example
 
