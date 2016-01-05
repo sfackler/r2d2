@@ -196,24 +196,28 @@ fn add_connection<M>(delay: Duration, shared: &Arc<SharedPool<M>>) where M: Mana
 }
 
 fn reap_connections<M>(shared: &Arc<SharedPool<M>>) where M: ManageConnection {
-    if let Some(timeout) = shared.config.idle_timeout() {
-        let timeout = cvt(timeout);
-        let mut old = VecDeque::with_capacity(shared.config.pool_size() as usize);
-        let mut to_drop = vec![];
+    let mut old = VecDeque::with_capacity(shared.config.pool_size() as usize);
+    let mut to_drop = vec![];
 
-        let mut internals = shared.internals.lock().unwrap();
-        mem::swap(&mut old, &mut internals.conns);
-        let now = SteadyTime::now();
-        for conn in old {
-            if now - conn.idle_start >= timeout {
-                drop_conn(shared, &mut internals);
-                to_drop.push(conn.conn);
-            } else {
-                internals.conns.push_back(conn);
-            }
+    let mut internals = shared.internals.lock().unwrap();
+    mem::swap(&mut old, &mut internals.conns);
+    let now = SteadyTime::now();
+    for conn in old {
+        let mut reap = false;
+        if let Some(timeout) = shared.config.idle_timeout() {
+            reap |= now - conn.idle_start >= cvt(timeout);
         }
-        drop(internals); // make sure we run to_drop destructors without this locked
+        if let Some(lifetime) = shared.config.max_lifetime() {
+            reap |= now - conn.birth >= cvt(lifetime);
+        }
+        if reap {
+            drop_conn(shared, &mut internals);
+            to_drop.push(conn.conn);
+        } else {
+            internals.conns.push_back(conn);
+        }
     }
+    drop(internals); // make sure we run to_drop destructors without this locked
 }
 
 /// A generic connection pool.
@@ -318,8 +322,11 @@ impl<M> Pool<M> where M: ManageConnection {
             }
         }
 
-        let s = shared.clone();
-        shared.thread_pool.run_at_fixed_rate(Duration::seconds(30), move || reap_connections(&s));
+        if shared.config.max_lifetime().is_some() || shared.config.idle_timeout().is_some() {
+            let s = shared.clone();
+            shared.thread_pool.run_at_fixed_rate(Duration::seconds(30),
+                                                 move || reap_connections(&s));
+        }
 
         Ok(Pool {
             shared: shared,
