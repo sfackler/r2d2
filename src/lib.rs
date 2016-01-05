@@ -138,6 +138,7 @@ impl<C, E> CustomizeConnection<C, E> for NopConnectionCustomizer {}
 
 struct Conn<C> {
     conn: C,
+    birth: SteadyTime,
     idle_start: SteadyTime,
 }
 
@@ -145,6 +146,7 @@ impl<C> Conn<C> {
     fn new(conn: C) -> Conn<C> {
         Conn {
             conn: conn,
+            birth: SteadyTime::now(),
             idle_start: SteadyTime::now(),
         }
     }
@@ -324,21 +326,21 @@ impl<M> Pool<M> where M: ManageConnection {
         })
     }
 
-    fn get_inner(&self) -> Result<M::Connection, GetTimeout> {
+    fn get_inner(&self) -> Result<Conn<M::Connection>, GetTimeout> {
         let end = SteadyTime::now() + cvt(self.shared.config.connection_timeout());
         let mut internals = self.shared.internals.lock().unwrap();
 
         loop {
             match internals.conns.pop_front() {
-                Some(Conn { mut conn, .. }) => {
+                Some(mut conn) => {
                     drop(internals);
 
                     if self.shared.config.test_on_check_out() {
-                        if let Err(e) = self.shared.manager.is_valid(&mut conn) {
+                        if let Err(e) = self.shared.manager.is_valid(&mut conn.conn) {
                             self.shared.config.error_handler().handle_error(e);
                             internals = self.shared.internals.lock().unwrap();
                             drop_conn(&self.shared, &mut internals);
-                            continue
+                            continue;
                         }
                     }
 
@@ -373,15 +375,16 @@ impl<M> Pool<M> where M: ManageConnection {
         })
     }
 
-    fn put_back(&self, mut conn: M::Connection) {
+    fn put_back(&self, mut conn: Conn<M::Connection>) {
         // This is specified to be fast, but call it before locking anyways
-        let broken = self.shared.manager.has_broken(&mut conn);
+        let broken = self.shared.manager.has_broken(&mut conn.conn);
 
         let mut internals = self.shared.internals.lock().unwrap();
         if broken {
             drop_conn(&self.shared, &mut internals);
         } else {
-            internals.conns.push_back(Conn::new(conn));
+            conn.idle_start = SteadyTime::now();
+            internals.conns.push_back(conn);
             self.shared.cond.notify_one();
         }
     }
@@ -390,7 +393,7 @@ impl<M> Pool<M> where M: ManageConnection {
 /// A smart pointer wrapping a connection.
 pub struct PooledConnection<M> where M: ManageConnection {
     pool: Pool<M>,
-    conn: Option<M::Connection>,
+    conn: Option<Conn<M::Connection>>,
 }
 
 impl<M> fmt::Debug for PooledConnection<M>
@@ -398,7 +401,7 @@ impl<M> fmt::Debug for PooledConnection<M>
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.debug_struct("PooledConnection")
             .field("pool", &self.pool)
-            .field("connection", self.conn.as_ref().unwrap())
+            .field("connection", &self.conn.as_ref().unwrap().conn)
             .finish()
     }
 }
@@ -413,13 +416,13 @@ impl<M> Deref for PooledConnection<M> where M: ManageConnection {
     type Target = M::Connection;
 
     fn deref(&self) -> &M::Connection {
-        self.conn.as_ref().unwrap()
+        &self.conn.as_ref().unwrap().conn
     }
 }
 
 impl<M> DerefMut for PooledConnection<M> where M: ManageConnection {
     fn deref_mut(&mut self) -> &mut M::Connection {
-        self.conn.as_mut().unwrap()
+        &mut self.conn.as_mut().unwrap().conn
     }
 }
 

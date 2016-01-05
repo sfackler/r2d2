@@ -57,11 +57,22 @@ impl<C, E> Builder<C, E> {
         self
     }
 
+    /// Sets `max_lifetime`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `max_lifetime` is the zero `Duration`.
+    pub fn max_lifetime(mut self, max_lifetime: Option<Duration>) -> Builder<C, E> {
+        assert!(max_lifetime != Some(Duration::from_secs(0)), "max_lifetime must be nonzero");
+        self.c.max_lifetime = max_lifetime;
+        self
+    }
+
     /// Sets `idle_timeout`.
     ///
     /// # Panics
     ///
-    /// Panics if `idle_timeout` is set to the zero `Duration`.
+    /// Panics if `idle_timeout` is the zero `Duration`.
     pub fn idle_timeout(mut self, idle_timeout: Option<Duration>) -> Builder<C, E> {
         assert!(idle_timeout != Some(Duration::from_secs(0)), "idle_timeout must be nonzero");
         self.c.idle_timeout = idle_timeout;
@@ -115,6 +126,7 @@ pub struct Config<C, E> {
     helper_threads: u32,
     test_on_check_out: bool,
     initialization_fail_fast: bool,
+    max_lifetime: Option<Duration>,
     idle_timeout: Option<Duration>,
     connection_timeout: Duration,
     error_handler: Box<HandleError<E>>,
@@ -128,6 +140,7 @@ impl<C, E> fmt::Debug for Config<C, E> {
             .field("helper_threads", &self.helper_threads)
             .field("test_on_check_out", &self.test_on_check_out)
             .field("initialization_fail_fast", &self.initialization_fail_fast)
+            .field("max_lifetmie", &self.max_lifetime)
             .field("idle_timeout", &self.idle_timeout)
             .field("connection_timeout", &self.connection_timeout)
             .finish()
@@ -142,6 +155,7 @@ impl<C, E> Default for Config<C, E> {
             test_on_check_out: true,
             initialization_fail_fast: true,
             idle_timeout: Some(Duration::from_secs(10 * 60)),
+            max_lifetime: Some(Duration::from_secs(30 * 60)),
             connection_timeout: Duration::from_secs(30),
             error_handler: Box::new(NopErrorHandler),
             connection_customizer: Box::new(NopConnectionCustomizer),
@@ -189,12 +203,21 @@ impl<C, E> Config<C, E> {
         self.initialization_fail_fast
     }
 
-    /// If set, connections will be closed after sitting idle within 30 seconds
-    /// of this duration.
+    /// If set, connections will be closed after sitting idle for at most 30
+    /// seconds beyond this duration.
     ///
     /// Defaults to 10 minutes.
     pub fn idle_timeout(&self) -> Option<Duration> {
         self.idle_timeout
+    }
+
+    /// If set, connections will be closed after existing for at most 30 seconds
+    /// beyond this duration. If a connection reaches its maximum lifetime while
+    /// checked out it will be closed when it is returned to the pool.
+    ///
+    /// Defaults to 30 minutes.
+    pub fn max_lifetime(&self) -> Option<Duration> {
+        self.max_lifetime
     }
 
     /// Calls to `Pool::get` will wait this long for a connection to become
