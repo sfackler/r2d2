@@ -189,7 +189,8 @@ impl<C, E> Config<C, E> {
         self.initialization_fail_fast
     }
 
-    /// If set, connections will be closed after sitting idle for this long.
+    /// If set, connections will be closed after sitting idle within 30 seconds
+    /// of this duration.
     ///
     /// Defaults to 10 minutes.
     pub fn idle_timeout(&self) -> Option<Duration> {
