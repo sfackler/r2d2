@@ -48,6 +48,7 @@ use std::collections::VecDeque;
 use std::error::Error;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
+use std::mem;
 use std::sync::{Arc, Mutex, MutexGuard, Condvar};
 use time::{Duration, SteadyTime};
 
@@ -135,8 +136,22 @@ pub struct NopConnectionCustomizer;
 
 impl<C, E> CustomizeConnection<C, E> for NopConnectionCustomizer {}
 
+struct Conn<C> {
+    conn: C,
+    idle_start: SteadyTime,
+}
+
+impl<C> Conn<C> {
+    fn new(conn: C) -> Conn<C> {
+        Conn {
+            conn: conn,
+            idle_start: SteadyTime::now(),
+        }
+    }
+}
+
 struct PoolInternals<C> {
-    conns: VecDeque<C>,
+    conns: VecDeque<Conn<C>>,
     num_conns: u32,
 }
 
@@ -146,6 +161,14 @@ struct SharedPool<M> where M: ManageConnection {
     internals: Mutex<PoolInternals<M::Connection>>,
     cond: Condvar,
     thread_pool: ScheduledThreadPool,
+}
+
+fn drop_conn<M>(shared: &Arc<SharedPool<M>>,
+                internals: &mut MutexGuard<PoolInternals<M::Connection>>)
+        where M: ManageConnection
+{
+    internals.num_conns -= 1;
+    add_connection(Duration::zero(), shared);
 }
 
 fn add_connection<M>(delay: Duration, shared: &Arc<SharedPool<M>>) where M: ManageConnection {
@@ -158,7 +181,7 @@ fn add_connection<M>(delay: Duration, shared: &Arc<SharedPool<M>>) where M: Mana
         match conn {
             Ok(conn) => {
                 let mut internals = shared.internals.lock().unwrap();
-                internals.conns.push_back(conn);
+                internals.conns.push_back(Conn::new(conn));
                 internals.num_conns += 1;
                 shared.cond.notify_one();
             }
@@ -168,6 +191,27 @@ fn add_connection<M>(delay: Duration, shared: &Arc<SharedPool<M>>) where M: Mana
             },
         }
     });
+}
+
+fn reap_connections<M>(shared: &Arc<SharedPool<M>>) where M: ManageConnection {
+    if let Some(timeout) = shared.config.idle_timeout() {
+        let timeout = cvt(timeout);
+        let mut old = VecDeque::with_capacity(shared.config.pool_size() as usize);
+        let mut to_drop = vec![];
+
+        let mut internals = shared.internals.lock().unwrap();
+        mem::swap(&mut old, &mut internals.conns);
+        let now = SteadyTime::now();
+        for conn in old {
+            if now - conn.idle_start >= timeout {
+                drop_conn(shared, &mut internals);
+                to_drop.push(conn.conn);
+            } else {
+                internals.conns.push_back(conn);
+            }
+        }
+        drop(internals); // make sure we run to_drop destructors without this locked
+    }
 }
 
 /// A generic connection pool.
@@ -241,7 +285,7 @@ impl<M> Pool<M> where M: ManageConnection {
     pub fn new(config: Config<M::Connection, M::Error>, manager: M)
                -> Result<Pool<M>, InitializationError> {
         let internals = PoolInternals {
-            conns: VecDeque::new(),
+            conns: VecDeque::with_capacity(config.pool_size() as usize),
             num_conns: 0,
         };
 
@@ -272,6 +316,9 @@ impl<M> Pool<M> where M: ManageConnection {
             }
         }
 
+        let s = shared.clone();
+        shared.thread_pool.run_at_fixed_rate(Duration::seconds(30), move || reap_connections(&s));
+
         Ok(Pool {
             shared: shared,
         })
@@ -283,14 +330,14 @@ impl<M> Pool<M> where M: ManageConnection {
 
         loop {
             match internals.conns.pop_front() {
-                Some(mut conn) => {
+                Some(Conn { mut conn, .. }) => {
                     drop(internals);
 
                     if self.shared.config.test_on_check_out() {
                         if let Err(e) = self.shared.manager.is_valid(&mut conn) {
                             self.shared.config.error_handler().handle_error(e);
                             internals = self.shared.internals.lock().unwrap();
-                            self.handle_broken(&mut internals);
+                            drop_conn(&self.shared, &mut internals);
                             continue
                         }
                     }
@@ -326,20 +373,15 @@ impl<M> Pool<M> where M: ManageConnection {
         })
     }
 
-    fn handle_broken(&self, internals: &mut MutexGuard<PoolInternals<M::Connection>>) {
-        internals.num_conns -= 1;
-        add_connection(Duration::zero(), &self.shared);
-    }
-
     fn put_back(&self, mut conn: M::Connection) {
         // This is specified to be fast, but call it before locking anyways
         let broken = self.shared.manager.has_broken(&mut conn);
 
         let mut internals = self.shared.internals.lock().unwrap();
         if broken {
-            self.handle_broken(&mut internals);
+            drop_conn(&self.shared, &mut internals);
         } else {
-            internals.conns.push_back(conn);
+            internals.conns.push_back(Conn::new(conn));
             self.shared.cond.notify_one();
         }
     }

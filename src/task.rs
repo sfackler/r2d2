@@ -122,7 +122,6 @@ impl ScheduledThreadPool {
         self.shared.run(job)
     }
 
-    #[allow(dead_code)]
     pub fn run_at_fixed_rate<F>(&self, rate: Duration, f: F) where F: FnMut() + Send + 'static {
         let job = Job {
             type_: JobType::FixedRate { f: Box::new(f), rate: rate },
