@@ -49,7 +49,7 @@ use std::error::Error;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::mem;
-use std::sync::{Arc, Mutex, MutexGuard, Condvar};
+use std::sync::{Arc, Mutex, Condvar};
 use time::{Duration, SteadyTime};
 
 #[doc(inline)]
@@ -155,6 +155,7 @@ impl<C> Conn<C> {
 struct PoolInternals<C> {
     conns: VecDeque<Conn<C>>,
     num_conns: u32,
+    pending_conns: u32,
 }
 
 struct SharedPool<M> where M: ManageConnection {
@@ -166,33 +167,46 @@ struct SharedPool<M> where M: ManageConnection {
 }
 
 fn drop_conn<M>(shared: &Arc<SharedPool<M>>,
-                internals: &mut MutexGuard<PoolInternals<M::Connection>>)
+                internals: &mut PoolInternals<M::Connection>)
         where M: ManageConnection
 {
     internals.num_conns -= 1;
-    add_connection(Duration::zero(), shared);
+
+    let min = shared.config.min_idle().unwrap_or(shared.config.pool_size());
+    if internals.num_conns + internals.pending_conns < min {
+        add_connection(shared, internals);
+    }
 }
 
-fn add_connection<M>(delay: Duration, shared: &Arc<SharedPool<M>>) where M: ManageConnection {
-    let new_shared = shared.clone();
-    shared.thread_pool.run_after(delay, move || {
-        let shared = new_shared;
-        let conn = shared.manager.connect().and_then(|mut conn| {
-            shared.config.connection_customizer().on_acquire(&mut conn).map(|_| conn)
-        });
-        match conn {
-            Ok(conn) => {
-                let mut internals = shared.internals.lock().unwrap();
-                internals.conns.push_back(Conn::new(conn));
-                internals.num_conns += 1;
-                shared.cond.notify_one();
+fn add_connection<M>(shared: &Arc<SharedPool<M>>,
+                     internals: &mut PoolInternals<M::Connection>)
+    where M: ManageConnection
+{
+    internals.pending_conns += 1;
+    inner(Duration::zero(), shared);
+
+    fn inner<M>(delay: Duration, shared: &Arc<SharedPool<M>>) where M: ManageConnection {
+        let new_shared = shared.clone();
+        shared.thread_pool.run_after(delay, move || {
+            let shared = new_shared;
+            let conn = shared.manager.connect().and_then(|mut conn| {
+                shared.config.connection_customizer().on_acquire(&mut conn).map(|_| conn)
+            });
+            match conn {
+                Ok(conn) => {
+                    let mut internals = shared.internals.lock().unwrap();
+                    internals.conns.push_back(Conn::new(conn));
+                    internals.pending_conns -= 1;
+                    internals.num_conns += 1;
+                    shared.cond.notify_one();
+                }
+                Err(err) => {
+                    shared.config.error_handler().handle_error(err);
+                    inner(Duration::seconds(1), &shared);
+                },
             }
-            Err(err) => {
-                shared.config.error_handler().handle_error(err);
-                add_connection(Duration::seconds(1), &shared);
-            },
-        }
-    });
+        });
+    }
 }
 
 fn reap_connections<M>(shared: &Arc<SharedPool<M>>) where M: ManageConnection {
@@ -293,6 +307,7 @@ impl<M> Pool<M> where M: ManageConnection {
         let internals = PoolInternals {
             conns: VecDeque::with_capacity(config.pool_size() as usize),
             num_conns: 0,
+            pending_conns: 0,
         };
 
         let shared = Arc::new(SharedPool {
@@ -303,8 +318,12 @@ impl<M> Pool<M> where M: ManageConnection {
             cond: Condvar::new(),
         });
 
-        for _ in 0..shared.config.pool_size() {
-            add_connection(Duration::zero(), &shared);
+        {
+            let mut inner = shared.internals.lock().unwrap();
+            for _ in 0..shared.config.min_idle().unwrap_or(shared.config.pool_size()) {
+                add_connection(&shared, &mut inner);
+            }
+            drop(inner);
         }
 
         if shared.config.initialization_fail_fast() {
@@ -354,6 +373,10 @@ impl<M> Pool<M> where M: ManageConnection {
                     return Ok(conn);
                 }
                 None => {
+                    if internals.num_conns + internals.pending_conns < self.shared.config.pool_size() {
+                        add_connection(&self.shared, &mut internals);
+                    }
+
                     let now = SteadyTime::now();
                     let mut timeout = (end - now).num_milliseconds();
                     if timeout < 0 {

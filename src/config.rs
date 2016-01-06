@@ -34,6 +34,12 @@ impl<C, E> Builder<C, E> {
         self
     }
 
+    /// Sets `min_idle`.
+    pub fn min_idle(mut self, min_idle: Option<u32>) -> Builder<C, E> {
+        self.c.min_idle = min_idle;
+        self
+    }
+
     /// Sets `helper_threads`.
     ///
     /// # Panics
@@ -123,6 +129,7 @@ impl<C, E> Builder<C, E> {
 /// values. It can be constructed using a `Builder`.
 pub struct Config<C, E> {
     pool_size: u32,
+    min_idle: Option<u32>,
     helper_threads: u32,
     test_on_check_out: bool,
     initialization_fail_fast: bool,
@@ -137,6 +144,7 @@ impl<C, E> fmt::Debug for Config<C, E> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.debug_struct("Config")
             .field("pool_size", &self.pool_size)
+            .field("min_idle", &self.min_idle)
             .field("helper_threads", &self.helper_threads)
             .field("test_on_check_out", &self.test_on_check_out)
             .field("initialization_fail_fast", &self.initialization_fail_fast)
@@ -151,6 +159,7 @@ impl<C, E> Default for Config<C, E> {
     fn default() -> Config<C, E> {
         Config {
             pool_size: 10,
+            min_idle: None,
             helper_threads: 3,
             test_on_check_out: true,
             initialization_fail_fast: true,
@@ -172,11 +181,19 @@ impl<C, E> Config<C, E> {
         Builder::new()
     }
 
-    /// The number of connections managed by the pool.
+    /// The maximum number of connections managed by the pool.
     ///
     /// Defaults to 10.
     pub fn pool_size(&self) -> u32 {
         self.pool_size
+    }
+
+    /// If set, the pool will try to maintain at least this many idle
+    /// connections at all times, while respecting the value of `pool_size`.
+    ///
+    /// Defaults to None (equivalent to the value of `pool_size`).
+    pub fn min_idle(&self) -> Option<u32> {
+        self.min_idle
     }
 
     /// The number of threads that the pool will use for asynchronous
