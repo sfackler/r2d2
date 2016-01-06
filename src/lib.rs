@@ -44,6 +44,7 @@
 extern crate log;
 extern crate time;
 
+use std::cmp;
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fmt;
@@ -202,7 +203,9 @@ fn add_connection<M>(shared: &Arc<SharedPool<M>>,
                 }
                 Err(err) => {
                     shared.config.error_handler().handle_error(err);
-                    inner(Duration::seconds(1), &shared);
+                    let delay = cmp::max(Duration::milliseconds(200), delay);
+                    let delay = cmp::min(cvt(shared.config.connection_timeout()) / 2, delay * 2);
+                    inner(delay, &shared);
                 },
             }
         });
