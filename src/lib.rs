@@ -62,6 +62,9 @@ pub mod config;
 mod task;
 mod thunk;
 
+#[cfg(test)]
+mod test;
+
 /// A trait which provides connection-specific functionality.
 pub trait ManageConnection: Send + Sync + 'static {
     /// The connection type this manager deals with.
@@ -307,6 +310,14 @@ impl<M> Pool<M> where M: ManageConnection {
     /// connections.
     pub fn new(config: Config<M::Connection, M::Error>, manager: M)
                -> Result<Pool<M>, InitializationError> {
+        Pool::new_inner(config, manager, Duration::seconds(30))
+    }
+
+    // for testing
+    fn new_inner(config: Config<M::Connection, M::Error>,
+                 manager: M,
+                 reaper_rate: Duration)
+                 -> Result<Pool<M>, InitializationError> {
         let internals = PoolInternals {
             conns: VecDeque::with_capacity(config.pool_size() as usize),
             num_conns: 0,
@@ -346,7 +357,7 @@ impl<M> Pool<M> where M: ManageConnection {
 
         if shared.config.max_lifetime().is_some() || shared.config.idle_timeout().is_some() {
             let s = shared.clone();
-            shared.thread_pool.run_at_fixed_rate(Duration::seconds(30),
+            shared.thread_pool.run_at_fixed_rate(reaper_rate,
                                                  move || reap_connections(&s));
         }
 
