@@ -1,4 +1,5 @@
-use std::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, Ordering};
+use std::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, AtomicUsize, ATOMIC_USIZE_INIT, AtomicIsize,
+                        Ordering};
 use std::sync::mpsc::{self, SyncSender, Receiver};
 use std::sync::{Mutex, Arc};
 use std::time::Duration;
@@ -255,4 +256,101 @@ fn test_connection_customizer() {
     let conn = pool.get().unwrap();
     assert_eq!(1, conn.0);
     assert!(DROPPED.load(Ordering::SeqCst));
+}
+
+#[test]
+fn test_idle_timeout() {
+    static DROPPED: AtomicUsize = ATOMIC_USIZE_INIT;
+
+    struct Connection;
+
+    impl Drop for Connection {
+        fn drop(&mut self) {
+            DROPPED.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    struct Handler(AtomicIsize);
+
+    impl ManageConnection for Handler {
+        type Connection = Connection;
+        type Error = ();
+
+        fn connect(&self) -> Result<Connection, ()> {
+            if self.0.fetch_sub(1, Ordering::SeqCst) > 0 {
+                Ok(Connection)
+            } else {
+                Err(())
+            }
+        }
+
+        fn is_valid(&self, _: &mut Connection) -> Result<(), ()> {
+            Ok(())
+        }
+
+        fn has_broken(&self, _: &mut Connection) -> bool {
+            false
+        }
+    }
+
+    let config = Config::builder()
+        .pool_size(5)
+        .idle_timeout(Some(Duration::from_secs(1)))
+        .build();
+    let pool = Pool::new_inner(config, Handler(AtomicIsize::new(5)), 1).unwrap();
+    let conn = pool.get().unwrap();
+    thread::sleep(Duration::from_secs(2));
+    assert_eq!(4, DROPPED.load(Ordering::SeqCst));
+    drop(conn);
+    assert_eq!(4, DROPPED.load(Ordering::SeqCst));
+}
+
+#[test]
+fn test_max_lifetime() {
+    static DROPPED: AtomicUsize = ATOMIC_USIZE_INIT;
+
+    struct Connection;
+
+    impl Drop for Connection {
+        fn drop(&mut self) {
+            DROPPED.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    struct Handler(AtomicIsize);
+
+    impl ManageConnection for Handler {
+        type Connection = Connection;
+        type Error = ();
+
+        fn connect(&self) -> Result<Connection, ()> {
+            if self.0.fetch_sub(1, Ordering::SeqCst) > 0 {
+                Ok(Connection)
+            } else {
+                Err(())
+            }
+        }
+
+        fn is_valid(&self, _: &mut Connection) -> Result<(), ()> {
+            Ok(())
+        }
+
+        fn has_broken(&self, _: &mut Connection) -> bool {
+            false
+        }
+    }
+
+    let config = Config::builder()
+        .pool_size(5)
+        .max_lifetime(Some(Duration::from_secs(1)))
+        .connection_timeout(Duration::from_secs(1))
+        .build();
+    let pool = Pool::new_inner(config, Handler(AtomicIsize::new(5)), 1).unwrap();
+    let conn = pool.get().unwrap();
+    thread::sleep(Duration::from_secs(2));
+    assert_eq!(4, DROPPED.load(Ordering::SeqCst));
+    drop(conn);
+    thread::sleep(Duration::from_secs(2));
+    assert_eq!(5, DROPPED.load(Ordering::SeqCst));
+    assert!(pool.get().is_err());
 }

@@ -170,6 +170,12 @@ struct SharedPool<M> where M: ManageConnection {
     thread_pool: ScheduledThreadPool,
 }
 
+impl<M> Drop for SharedPool<M> where M: ManageConnection {
+    fn drop(&mut self) {
+        self.thread_pool.clear();
+    }
+}
+
 fn drop_conn<M>(shared: &Arc<SharedPool<M>>,
                 internals: &mut PoolInternals<M::Connection>)
         where M: ManageConnection
@@ -245,12 +251,6 @@ pub struct Pool<M> where M: ManageConnection {
     shared: Arc<SharedPool<M>>,
 }
 
-impl<M> Drop for Pool<M> where M: ManageConnection {
-    fn drop(&mut self) {
-        self.shared.thread_pool.clear();
-    }
-}
-
 /// Returns a new `Pool` referencing the same state as `self`.
 impl<M> Clone for Pool<M> where M: ManageConnection {
     fn clone(&self) -> Pool<M> {
@@ -310,13 +310,13 @@ impl<M> Pool<M> where M: ManageConnection {
     /// connections.
     pub fn new(config: Config<M::Connection, M::Error>, manager: M)
                -> Result<Pool<M>, InitializationError> {
-        Pool::new_inner(config, manager, Duration::seconds(30))
+        Pool::new_inner(config, manager, 30)
     }
 
     // for testing
     fn new_inner(config: Config<M::Connection, M::Error>,
                  manager: M,
-                 reaper_rate: Duration)
+                 reaper_rate: i64)
                  -> Result<Pool<M>, InitializationError> {
         let internals = PoolInternals {
             conns: VecDeque::with_capacity(config.pool_size() as usize),
@@ -357,7 +357,7 @@ impl<M> Pool<M> where M: ManageConnection {
 
         if shared.config.max_lifetime().is_some() || shared.config.idle_timeout().is_some() {
             let s = shared.clone();
-            shared.thread_pool.run_at_fixed_rate(reaper_rate,
+            shared.thread_pool.run_at_fixed_rate(Duration::seconds(reaper_rate),
                                                  move || reap_connections(&s));
         }
 
