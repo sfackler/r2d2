@@ -1,8 +1,9 @@
 //! Pool configuration.
 use std::fmt;
 use std::time::Duration;
+use std::error::Error;
 
-use {HandleError, NopErrorHandler, CustomizeConnection, NopConnectionCustomizer};
+use {HandleError, LoggingErrorHandler, CustomizeConnection, NopConnectionCustomizer};
 
 /// A builder for `Config`.
 ///
@@ -13,7 +14,7 @@ pub struct Builder<C, E> {
     c: Config<C, E>,
 }
 
-impl<C, E> Builder<C, E> {
+impl<C, E: Error> Builder<C, E> {
     /// Constructs a new `Builder`.
     ///
     /// Parameters are initialized with their default values.
@@ -165,7 +166,7 @@ impl<C, E> fmt::Debug for Config<C, E> {
     }
 }
 
-impl<C, E> Default for Config<C, E> {
+impl<C, E: Error> Default for Config<C, E> {
     fn default() -> Config<C, E> {
         Config {
             pool_size: 10,
@@ -176,13 +177,13 @@ impl<C, E> Default for Config<C, E> {
             idle_timeout: Some(Duration::from_secs(10 * 60)),
             max_lifetime: Some(Duration::from_secs(30 * 60)),
             connection_timeout: Duration::from_secs(30),
-            error_handler: Box::new(NopErrorHandler),
+            error_handler: Box::new(LoggingErrorHandler),
             connection_customizer: Box::new(NopConnectionCustomizer),
         }
     }
 }
 
-impl<C, E> Config<C, E> {
+impl<C, E: Error> Config<C, E> {
     /// Creates a new `Builder` which can be used to construct a customized
     /// `Config`.
     ///
@@ -265,7 +266,7 @@ impl<C, E> Config<C, E> {
 
     /// The handler for error reported in the pool.
     ///
-    /// Defaults to `r2d2::NopErrorHandler`.
+    /// Defaults to `r2d2::LoggingErrorHandler`.
     pub fn error_handler(&self) -> &HandleError<E> {
         &*self.error_handler
     }
@@ -283,10 +284,11 @@ mod test {
     use std::time::Duration;
 
     use super::*;
+    use test::Error;
 
     #[test]
     fn builder() {
-        let config = Config::<(), ()>::builder()
+        let config = Config::<(), Error>::builder()
                          .pool_size(1)
                          .helper_threads(2)
                          .test_on_check_out(false)
@@ -303,36 +305,36 @@ mod test {
     #[test]
     #[should_panic(expected = "pool_size must be positive")]
     fn builder_zero_pool_size() {
-        Config::<(), ()>::builder().pool_size(0);
+        Config::<(), Error>::builder().pool_size(0);
     }
 
     #[test]
     #[should_panic(expected = "helper_threads must be positive")]
     fn builder_zero_helper_threads() {
-        Config::<(), ()>::builder().helper_threads(0);
+        Config::<(), Error>::builder().helper_threads(0);
     }
 
     #[test]
     #[should_panic(expected = "connection_timeout must be positive")]
     fn builder_zero_connection_timeout() {
-        Config::<(), ()>::builder().connection_timeout(Duration::from_secs(0));
+        Config::<(), Error>::builder().connection_timeout(Duration::from_secs(0));
     }
 
     #[test]
     #[should_panic(expected = "idle_timeout must be positive")]
     fn builder_zero_idle_timeout() {
-        Config::<(), ()>::builder().idle_timeout(Some(Duration::from_secs(0)));
+        Config::<(), Error>::builder().idle_timeout(Some(Duration::from_secs(0)));
     }
 
     #[test]
     #[should_panic(expected = "max_lifetime must be positive")]
     fn builder_zero_max_lifetime() {
-        Config::<(), ()>::builder().max_lifetime(Some(Duration::from_secs(0)));
+        Config::<(), Error>::builder().max_lifetime(Some(Duration::from_secs(0)));
     }
 
     #[test]
     #[should_panic(expected = "min_idle must be no larger than pool_size")]
     fn builder_too_many_num_idle() {
-        Config::<(), ()>::builder().pool_size(1).min_idle(Some(2)).build();
+        Config::<(), Error>::builder().pool_size(1).min_idle(Some(2)).build();
     }
 }
