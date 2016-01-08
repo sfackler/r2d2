@@ -149,10 +149,11 @@ struct Conn<C> {
 
 impl<C> Conn<C> {
     fn new(conn: C) -> Conn<C> {
+        let now = SteadyTime::now();
         Conn {
             conn: conn,
-            birth: SteadyTime::now(),
-            idle_start: SteadyTime::now(),
+            birth: now,
+            idle_start: now,
         }
     }
 }
