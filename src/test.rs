@@ -14,7 +14,7 @@ pub struct Error;
 
 impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.write_str("Error")
+        fmt.write_str("blammo")
     }
 }
 
@@ -204,7 +204,20 @@ fn test_initialization_failure() {
                      .connection_timeout_ms(1000)
                      .build();
     let manager = NthConnectFailManager { n: Mutex::new(0) };
-    Pool::new(config, manager).err().unwrap();
+    let err = Pool::new(config, manager).err().unwrap();
+    assert!(err.to_string().contains("blammo"));
+}
+
+#[test]
+fn test_lazy_initialization_failure() {
+    let config = Config::builder()
+                     .connection_timeout_ms(1000)
+                     .initialization_fail_fast(false)
+                     .build();
+    let manager = NthConnectFailManager { n: Mutex::new(0) };
+    let pool = Pool::new(config, manager).unwrap();
+    let err = pool.get().err().unwrap();
+    assert!(err.to_string().contains("blammo"));
 }
 
 #[test]

@@ -162,6 +162,7 @@ struct PoolInternals<C> {
     conns: VecDeque<Conn<C>>,
     num_conns: u32,
     pending_conns: u32,
+    last_error: Option<String>,
 }
 
 struct SharedPool<M>
@@ -207,12 +208,14 @@ fn add_connection<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<
             match conn {
                 Ok(conn) => {
                     let mut internals = shared.internals.lock().unwrap();
+                    internals.last_error = None;
                     internals.conns.push_back(Conn::new(conn));
                     internals.pending_conns -= 1;
                     internals.num_conns += 1;
                     shared.cond.notify_one();
                 }
                 Err(err) => {
+                    shared.internals.lock().unwrap().last_error = Some(err.to_string());
                     shared.config.error_handler().handle_error(err);
                     let delay = cmp::max(Duration::milliseconds(200), delay);
                     let delay = cmp::min(cvt(shared.config.connection_timeout()) / 2, delay * 2);
@@ -302,6 +305,7 @@ impl<M> Pool<M> where M: ManageConnection
             conns: VecDeque::with_capacity(config.pool_size() as usize),
             num_conns: 0,
             pending_conns: 0,
+            last_error: None,
         };
 
         let shared = Arc::new(SharedPool {
@@ -328,7 +332,7 @@ impl<M> Pool<M> where M: ManageConnection
             while internals.num_conns != initial_size {
                 let wait = end - SteadyTime::now();
                 if wait <= Duration::zero() {
-                    return Err(InitializationError(()));
+                    return Err(InitializationError(internals.last_error.take()));
                 }
                 internals = shared.cond
                                   .wait_timeout(internals, cvt_i(wait))
@@ -362,8 +366,10 @@ impl<M> Pool<M> where M: ManageConnection
 
                     if self.0.config.test_on_check_out() {
                         if let Err(e) = self.0.manager.is_valid(&mut conn.conn) {
+                            let msg = e.to_string();
                             self.0.config.error_handler().handle_error(e);
                             internals = self.0.internals.lock().unwrap();
+                            internals.last_error = Some(msg);
                             drop_conn(&self.0, &mut internals);
                             continue;
                         }
@@ -379,7 +385,7 @@ impl<M> Pool<M> where M: ManageConnection
 
                     let wait = end - SteadyTime::now();
                     if wait <= Duration::zero() {
-                        return Err(GetTimeout(()));
+                        return Err(GetTimeout(internals.last_error.take()));
                     };
                     internals = self.0
                                     .cond
@@ -413,11 +419,15 @@ impl<M> Pool<M> where M: ManageConnection
 
 /// An error returned by `Pool::new` if it fails to initialize connections.
 #[derive(Debug)]
-pub struct InitializationError(());
+pub struct InitializationError(Option<String>);
 
 impl fmt::Display for InitializationError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.write_str(self.description())
+        try!(fmt.write_str(self.description()));
+        if let Some(ref err) = self.0 {
+            try!(write!(fmt, ": {}", err));
+        }
+        Ok(())
     }
 }
 
@@ -429,11 +439,15 @@ impl Error for InitializationError {
 
 /// An error returned by `Pool::get` if it times out without retrieving a connection.
 #[derive(Debug)]
-pub struct GetTimeout(());
+pub struct GetTimeout(Option<String>);
 
 impl fmt::Display for GetTimeout {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.write_str(self.description())
+        try!(fmt.write_str(self.description()));
+        if let Some(ref err) = self.0 {
+            try!(write!(fmt, ": {}", err));
+        }
+        Ok(())
     }
 }
 
