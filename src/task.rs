@@ -2,8 +2,7 @@ use std::collections::BinaryHeap;
 use std::cmp::{PartialOrd, Ord, PartialEq, Eq, Ordering};
 use std::sync::{Arc, Mutex, Condvar};
 use std::thread;
-use time::Duration;
-use time;
+use time::{SteadyTime, Duration};
 
 use thunk::Thunk;
 
@@ -17,7 +16,7 @@ enum JobType {
 
 struct Job {
     type_: JobType,
-    time: u64,
+    time: SteadyTime,
 }
 
 impl PartialOrd for Job {
@@ -98,12 +97,8 @@ impl ScheduledThreadPool {
             shared: Arc::new(shared),
         };
 
-        for _ in 0..size {
-            let mut worker = Worker {
-                shared: pool.shared.clone(),
-            };
-
-            thread::spawn(move || worker.run());
+        for i in 0..size {
+            Worker::start(i, pool.shared.clone());
         }
 
         pool
@@ -117,16 +112,15 @@ impl ScheduledThreadPool {
     pub fn run_after<F>(&self, dur: Duration, job: F) where F: FnOnce() + Send + 'static {
         let job = Job {
             type_: JobType::Once(Thunk::new(job)),
-            time: (time::precise_time_ns() as i64 + dur.num_nanoseconds().unwrap()) as u64,
+            time: SteadyTime::now() + dur,
         };
         self.shared.run(job)
     }
 
-    #[allow(dead_code)]
     pub fn run_at_fixed_rate<F>(&self, rate: Duration, f: F) where F: FnMut() + Send + 'static {
         let job = Job {
             type_: JobType::FixedRate { f: Box::new(f), rate: rate },
-            time: (time::precise_time_ns() as i64 + rate.num_nanoseconds().unwrap()) as u64,
+            time: SteadyTime::now() + rate,
         };
         self.shared.run(job)
     }
@@ -137,6 +131,7 @@ impl ScheduledThreadPool {
 }
 
 struct Worker {
+    i: usize,
     shared: Arc<SharedPool>,
 }
 
@@ -144,15 +139,23 @@ impl Drop for Worker {
     fn drop(&mut self) {
         // Start up a new worker if this one's going away due to a panic from a job
         if thread::panicking() {
-            let mut worker = Worker {
-                shared: self.shared.clone(),
-            };
-            thread::spawn(move || worker.run());
+            Worker::start(self.i, self.shared.clone());
         }
     }
 }
 
 impl Worker {
+    fn start(i: usize, shared: Arc<SharedPool>) {
+        let mut worker = Worker {
+            i: i,
+            shared: shared,
+        };
+        thread::Builder::new()
+            .name(format!("ScheduledThreadPool worker {}", i))
+            .spawn(move || worker.run())
+            .unwrap();
+    }
+
     fn run(&mut self) {
         loop {
             match self.get_job() {
@@ -170,13 +173,13 @@ impl Worker {
 
         let mut inner = self.shared.inner.lock().unwrap();
         loop {
-            let now = time::precise_time_ns();
+            let now = SteadyTime::now();
 
             let need = match inner.queue.peek() {
                 None if inner.shutdown => return None,
                 None => Need::Wait,
                 Some(e) if e.time <= now => break,
-                Some(e) => Need::WaitTimeout(Duration::nanoseconds(e.time as i64 - now as i64)),
+                Some(e) => Need::WaitTimeout(e.time - now),
             };
 
             inner = match need {
@@ -201,7 +204,7 @@ impl Worker {
                 f();
                 let new_job = Job {
                     type_: JobType::FixedRate { f: f, rate: rate },
-                    time: (job.time as i64 + rate.num_nanoseconds().unwrap()) as u64,
+                    time: job.time + rate,
                 };
                 self.shared.run(new_job)
             }

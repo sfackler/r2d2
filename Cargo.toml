@@ -1,17 +1,13 @@
 [package]
 name = "r2d2"
-version = "0.6.1"
+version = "0.6.2"
 authors = ["Steven Fackler <sfackler@gmail.com>"]
 license = "MIT"
 description = "A generic connection pool"
 repository = "https://github.com/sfackler/r2d2"
-documentation = "https://sfackler.github.io/r2d2/doc/v0.6.1/r2d2"
+documentation = "https://sfackler.github.io/r2d2/doc/v0.6.2/r2d2"
 readme = "README.md"
 keywords = ["database", "pool"]
-
-[[test]]
-name = "test"
-path = "tests/test.rs"
 
 [dependencies]
 log = "0.3"
