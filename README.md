@@ -45,7 +45,7 @@ fn main() {
 
     let pool = r2d2::Pool::new(config, manager).unwrap();
 
-    for _ in 0..20i32 {
+    for _ in 0..20 {
         let pool = pool.clone();
         thread::spawn(move || {
             let conn = pool.get().unwrap();
