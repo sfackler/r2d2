@@ -264,8 +264,11 @@ impl<M> Clone for Pool<M> where M: ManageConnection {
 
 impl<M> fmt::Debug for Pool<M> where M: ManageConnection + fmt::Debug {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let inner = self.shared.internals.lock().unwrap();
+
         fmt.debug_struct("Pool")
-            .field("idle_connections", &self.shared.internals.lock().unwrap().conns.len())
+            .field("connections", &inner.num_conns)
+            .field("idle_connections", &inner.conns.len())
             .field("config", &self.shared.config)
             .field("manager", &self.shared.manager)
             .finish()

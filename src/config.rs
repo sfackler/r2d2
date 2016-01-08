@@ -91,8 +91,7 @@ impl<C, E> Builder<C, E> {
     ///
     /// Panics if `connection_timeout` is the zero duration
     pub fn connection_timeout(mut self, connection_timeout: Duration) -> Builder<C, E> {
-        assert!(connection_timeout.as_secs() > 0 || connection_timeout.subsec_nanos() > 0,
-                "connection_timeout must be positive");
+        assert!(connection_timeout > Duration::from_secs(0), "connection_timeout must be positive");
         self.c.connection_timeout = connection_timeout;
         self
     }
