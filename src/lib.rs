@@ -95,7 +95,7 @@ pub trait ManageConnection: Send + Sync + 'static {
 }
 
 /// A trait which handles errors reported by the `ManageConnection`.
-pub trait HandleError<E>: Send+Sync+'static {
+pub trait HandleError<E>: fmt::Debug + Send + Sync + 'static {
     /// Handles an error.
     fn handle_error(&self, error: E);
 }
@@ -120,7 +120,7 @@ impl<E> HandleError<E> for LoggingErrorHandler where E: Error
 }
 
 /// A trait which allows for customization of connections.
-pub trait CustomizeConnection<C, E>: Send+Sync+'static {
+pub trait CustomizeConnection<C, E>: fmt::Debug + Send + Sync + 'static {
     /// Called with connections immediately after they are returned from
     /// `ManageConnection::connect`.
     ///

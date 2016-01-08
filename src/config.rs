@@ -151,6 +151,7 @@ pub struct Config<C, E> {
     connection_customizer: Box<CustomizeConnection<C, E>>,
 }
 
+// manual to avoid bounds on C and E
 impl<C, E> fmt::Debug for Config<C, E> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.debug_struct("Config")
@@ -162,6 +163,8 @@ impl<C, E> fmt::Debug for Config<C, E> {
            .field("max_lifetime", &self.max_lifetime)
            .field("idle_timeout", &self.idle_timeout)
            .field("connection_timeout", &self.connection_timeout)
+           .field("error_handler", &self.error_handler)
+           .field("connection_customizer", &self.connection_customizer)
            .finish()
     }
 }

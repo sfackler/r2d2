@@ -250,6 +250,7 @@ fn test_connection_customizer() {
         }
     }
 
+    #[derive(Debug)]
     struct Customizer;
 
     impl CustomizeConnection<Connection, Error> for Customizer {
