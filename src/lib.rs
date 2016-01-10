@@ -347,9 +347,10 @@ impl<M> Pool<M> where M: ManageConnection
             cond: Condvar::new(),
         });
 
+        let initial_size = shared.config.min_idle().unwrap_or(shared.config.pool_size());
         {
             let mut inner = shared.internals.lock().unwrap();
-            for _ in 0..shared.config.min_idle().unwrap_or(shared.config.pool_size()) {
+            for _ in 0..initial_size {
                 add_connection(&shared, &mut inner);
             }
             drop(inner);
@@ -359,7 +360,7 @@ impl<M> Pool<M> where M: ManageConnection
             let end = SteadyTime::now() + cvt(shared.config.connection_timeout());
             let mut internals = shared.internals.lock().unwrap();
 
-            while internals.num_conns != shared.config.pool_size() {
+            while internals.num_conns != initial_size {
                 let wait = end - SteadyTime::now();
                 if wait <= Duration::zero() {
                     return Err(InitializationError(()));

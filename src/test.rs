@@ -352,3 +352,39 @@ fn test_max_lifetime() {
     assert_eq!(5, DROPPED.load(Ordering::SeqCst));
     assert!(pool.get().is_err());
 }
+
+#[test]
+fn min_idle() {
+    static CREATED: AtomicUsize = ATOMIC_USIZE_INIT;
+
+    struct Connection;
+
+    struct Handler;
+
+    impl ManageConnection for Handler {
+        type Connection = Connection;
+        type Error = ();
+
+        fn connect(&self) -> Result<Connection, ()> {
+            CREATED.fetch_add(1, Ordering::SeqCst);
+            Ok(Connection)
+        }
+
+        fn is_valid(&self, _: &mut Connection) -> Result<(), ()> {
+            Ok(())
+        }
+
+        fn has_broken(&self, _: &mut Connection) -> bool {
+            false
+        }
+    }
+
+    let config = Config::builder()
+        .pool_size(5)
+        .min_idle(Some(2))
+        .build();
+    let pool = Pool::new(config, Handler).unwrap();
+    assert_eq!(2, CREATED.load(Ordering::SeqCst));
+    let _conns = (0..5).map(|_| pool.get().unwrap()).collect::<Vec<_>>();
+    assert_eq!(5, CREATED.load(Ordering::SeqCst));
+}
