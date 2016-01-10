@@ -380,10 +380,15 @@ impl<M> Pool<M> where M: ManageConnection
         Ok(Pool { shared: shared })
     }
 
-    fn get_inner(&self) -> Result<Conn<M::Connection>, GetTimeout> {
+    /// Retrieves a connection from the pool.
+    ///
+    /// Waits for at most `Config::connection_timeout` before returning an
+    /// error.
+    pub fn get(&self) -> Result<PooledConnection<M>, GetTimeout> {
         let end = SteadyTime::now() + cvt(self.shared.config.connection_timeout());
         let mut internals = self.shared.internals.lock().unwrap();
 
+        let connection;
         loop {
             match internals.conns.pop_front() {
                 Some(mut conn) => {
@@ -398,7 +403,8 @@ impl<M> Pool<M> where M: ManageConnection
                         }
                     }
 
-                    return Ok(conn);
+                    connection = conn;
+                    break;
                 }
                 None => {
                     if internals.num_conns + internals.pending_conns <
@@ -424,16 +430,10 @@ impl<M> Pool<M> where M: ManageConnection
                 }
             }
         }
-    }
 
-    /// Retrieves a connection from the pool.
-    ///
-    /// Waits for at most `Config::connection_timeout` before returning an
-    /// error.
-    pub fn get(&self) -> Result<PooledConnection<M>, GetTimeout> {
         Ok(PooledConnection {
             pool: self.clone(),
-            conn: Some(try!(self.get_inner())),
+            conn: Some(connection),
         })
     }
 
