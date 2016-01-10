@@ -283,38 +283,6 @@ impl<M> fmt::Debug for Pool<M> where M: ManageConnection + fmt::Debug
     }
 }
 
-/// An error returned by `Pool::new` if it fails to initialize connections.
-#[derive(Debug)]
-pub struct InitializationError(());
-
-impl fmt::Display for InitializationError {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.write_str(self.description())
-    }
-}
-
-impl Error for InitializationError {
-    fn description(&self) -> &str {
-        "Unable to initialize connections"
-    }
-}
-
-/// An error returned by `Pool::get` if it times out without retrieving a connection.
-#[derive(Debug)]
-pub struct GetTimeout(());
-
-impl fmt::Display for GetTimeout {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.write_str(self.description())
-    }
-}
-
-impl Error for GetTimeout {
-    fn description(&self) -> &str {
-        "Timed out while waiting for a connection"
-    }
-}
-
 impl<M> Pool<M> where M: ManageConnection
 {
     /// Creates a new connection pool.
@@ -444,6 +412,38 @@ impl<M> Pool<M> where M: ManageConnection
             internals.conns.push_back(conn);
             self.shared.cond.notify_one();
         }
+    }
+}
+
+/// An error returned by `Pool::new` if it fails to initialize connections.
+#[derive(Debug)]
+pub struct InitializationError(());
+
+impl fmt::Display for InitializationError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.write_str(self.description())
+    }
+}
+
+impl Error for InitializationError {
+    fn description(&self) -> &str {
+        "Unable to initialize connections"
+    }
+}
+
+/// An error returned by `Pool::get` if it times out without retrieving a connection.
+#[derive(Debug)]
+pub struct GetTimeout(());
+
+impl fmt::Display for GetTimeout {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.write_str(self.description())
+    }
+}
+
+impl Error for GetTimeout {
+    fn description(&self) -> &str {
+        "Timed out while waiting for a connection"
     }
 }
 
