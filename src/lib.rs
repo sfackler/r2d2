@@ -462,7 +462,7 @@ pub struct PooledConnection<M>
 }
 
 impl<M> fmt::Debug for PooledConnection<M>
-    where M: ManageConnection + fmt::Debug,
+    where M: ManageConnection,
           M::Connection: fmt::Debug
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {

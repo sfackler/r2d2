@@ -380,9 +380,9 @@ fn min_idle() {
     }
 
     let config = Config::builder()
-        .pool_size(5)
-        .min_idle(Some(2))
-        .build();
+                     .pool_size(5)
+                     .min_idle(Some(2))
+                     .build();
     let pool = Pool::new(config, Handler).unwrap();
     assert_eq!(2, CREATED.load(Ordering::SeqCst));
     let _conns = (0..5).map(|_| pool.get().unwrap()).collect::<Vec<_>>();
