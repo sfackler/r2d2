@@ -465,10 +465,7 @@ impl<M> fmt::Debug for PooledConnection<M>
           M::Connection: fmt::Debug
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_struct("PooledConnection")
-           .field("pool", &self.pool)
-           .field("connection", &self.conn.as_ref().unwrap().conn)
-           .finish()
+        fmt::Debug::fmt(&self.conn.as_ref().unwrap().conn, fmt)
     }
 }
 
