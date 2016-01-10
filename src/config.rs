@@ -98,13 +98,6 @@ impl<C, E: Error> Builder<C, E> {
         self
     }
 
-    /// # Deprecated
-    ///
-    /// Use `connection_timeout` instead.
-    pub fn connection_timeout_ms(self, connection_timeout_ms: u32) -> Builder<C, E> {
-        self.connection_timeout(Duration::from_millis(connection_timeout_ms as u64))
-    }
-
     /// Sets the `error_handler`.
     pub fn error_handler(mut self, error_handler: Box<HandleError<E>>) -> Builder<C, E> {
         self.c.error_handler = error_handler;
@@ -259,14 +252,6 @@ impl<C, E: Error> Config<C, E> {
         self.connection_timeout
     }
 
-    /// # Deprecated
-    ///
-    /// Use `connection_timeout` instead.
-    pub fn connection_timeout_ms(&self) -> u32 {
-        self.connection_timeout.as_secs() as u32 * 1000 +
-        self.connection_timeout.subsec_nanos() / 1_000_000
-    }
-
     /// The handler for error reported in the pool.
     ///
     /// Defaults to `r2d2::LoggingErrorHandler`.
@@ -296,13 +281,13 @@ mod test {
                          .helper_threads(2)
                          .test_on_check_out(false)
                          .initialization_fail_fast(false)
-                         .connection_timeout_ms(3 * 1000)
+                         .connection_timeout(Duration::from_secs(3))
                          .build();
         assert_eq!(1, config.pool_size());
         assert_eq!(2, config.helper_threads());
         assert_eq!(false, config.test_on_check_out());
         assert_eq!(false, config.initialization_fail_fast());
-        assert_eq!(3 * 1000, config.connection_timeout_ms());
+        assert_eq!(Duration::from_secs(3), config.connection_timeout());
     }
 
     #[test]

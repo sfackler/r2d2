@@ -201,7 +201,7 @@ fn test_drop_on_broken() {
 #[test]
 fn test_initialization_failure() {
     let config = Config::builder()
-                     .connection_timeout_ms(1000)
+                     .connection_timeout(Duration::from_secs(1))
                      .build();
     let manager = NthConnectFailManager { n: Mutex::new(0) };
     let err = Pool::new(config, manager).err().unwrap();
@@ -211,7 +211,7 @@ fn test_initialization_failure() {
 #[test]
 fn test_lazy_initialization_failure() {
     let config = Config::builder()
-                     .connection_timeout_ms(1000)
+                     .connection_timeout(Duration::from_secs(1))
                      .initialization_fail_fast(false)
                      .build();
     let manager = NthConnectFailManager { n: Mutex::new(0) };
