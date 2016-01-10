@@ -255,30 +255,26 @@ fn reap_connections<M>(shared: &Arc<SharedPool<M>>)
 }
 
 /// A generic connection pool.
-pub struct Pool<M>
-    where M: ManageConnection
-{
-    shared: Arc<SharedPool<M>>,
-}
+pub struct Pool<M: ManageConnection>(Arc<SharedPool<M>>);
 
 /// Returns a new `Pool` referencing the same state as `self`.
 impl<M> Clone for Pool<M> where M: ManageConnection
 {
     fn clone(&self) -> Pool<M> {
-        Pool { shared: self.shared.clone() }
+        Pool(self.0.clone())
     }
 }
 
 impl<M> fmt::Debug for Pool<M> where M: ManageConnection + fmt::Debug
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        let inner = self.shared.internals.lock().unwrap();
+        let inner = self.0.internals.lock().unwrap();
 
         fmt.debug_struct("Pool")
            .field("connections", &inner.num_conns)
            .field("idle_connections", &inner.conns.len())
-           .field("config", &self.shared.config)
-           .field("manager", &self.shared.manager)
+           .field("config", &self.0.config)
+           .field("manager", &self.0.manager)
            .finish()
     }
 }
@@ -346,7 +342,7 @@ impl<M> Pool<M> where M: ManageConnection
                   .run_at_fixed_rate(Duration::seconds(reaper_rate), move || reap_connections(&s));
         }
 
-        Ok(Pool { shared: shared })
+        Ok(Pool(shared))
     }
 
     /// Retrieves a connection from the pool.
@@ -354,8 +350,8 @@ impl<M> Pool<M> where M: ManageConnection
     /// Waits for at most `Config::connection_timeout` before returning an
     /// error.
     pub fn get(&self) -> Result<PooledConnection<M>, GetTimeout> {
-        let end = SteadyTime::now() + cvt(self.shared.config.connection_timeout());
-        let mut internals = self.shared.internals.lock().unwrap();
+        let end = SteadyTime::now() + cvt(self.0.config.connection_timeout());
+        let mut internals = self.0.internals.lock().unwrap();
 
         let connection;
         loop {
@@ -363,11 +359,11 @@ impl<M> Pool<M> where M: ManageConnection
                 Some(mut conn) => {
                     drop(internals);
 
-                    if self.shared.config.test_on_check_out() {
-                        if let Err(e) = self.shared.manager.is_valid(&mut conn.conn) {
-                            self.shared.config.error_handler().handle_error(e);
-                            internals = self.shared.internals.lock().unwrap();
-                            drop_conn(&self.shared, &mut internals);
+                    if self.0.config.test_on_check_out() {
+                        if let Err(e) = self.0.manager.is_valid(&mut conn.conn) {
+                            self.0.config.error_handler().handle_error(e);
+                            internals = self.0.internals.lock().unwrap();
+                            drop_conn(&self.0, &mut internals);
                             continue;
                         }
                     }
@@ -376,16 +372,15 @@ impl<M> Pool<M> where M: ManageConnection
                     break;
                 }
                 None => {
-                    if internals.num_conns + internals.pending_conns <
-                       self.shared.config.pool_size() {
-                        add_connection(&self.shared, &mut internals);
+                    if internals.num_conns + internals.pending_conns < self.0.config.pool_size() {
+                        add_connection(&self.0, &mut internals);
                     }
 
                     let wait = end - SteadyTime::now();
                     if wait <= Duration::zero() {
                         return Err(GetTimeout(()));
                     };
-                    internals = self.shared
+                    internals = self.0
                                     .cond
                                     .wait_timeout_ms(internals, wait.num_milliseconds() as u32)
                                     .unwrap()
@@ -402,15 +397,15 @@ impl<M> Pool<M> where M: ManageConnection
 
     fn put_back(&self, mut conn: Conn<M::Connection>) {
         // This is specified to be fast, but call it before locking anyways
-        let broken = self.shared.manager.has_broken(&mut conn.conn);
+        let broken = self.0.manager.has_broken(&mut conn.conn);
 
-        let mut internals = self.shared.internals.lock().unwrap();
+        let mut internals = self.0.internals.lock().unwrap();
         if broken {
-            drop_conn(&self.shared, &mut internals);
+            drop_conn(&self.0, &mut internals);
         } else {
             conn.idle_start = SteadyTime::now();
             internals.conns.push_back(conn);
-            self.shared.cond.notify_one();
+            self.0.cond.notify_one();
         }
     }
 }
