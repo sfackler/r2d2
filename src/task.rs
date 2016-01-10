@@ -93,9 +93,7 @@ impl ScheduledThreadPool {
             cvar: Condvar::new(),
         };
 
-        let pool = ScheduledThreadPool {
-            shared: Arc::new(shared),
-        };
+        let pool = ScheduledThreadPool { shared: Arc::new(shared) };
 
         for i in 0..size {
             Worker::start(i, pool.shared.clone());
@@ -105,11 +103,15 @@ impl ScheduledThreadPool {
     }
 
     #[allow(dead_code)]
-    pub fn run<F>(&self, job: F) where F: FnOnce() + Send + 'static {
+    pub fn run<F>(&self, job: F)
+        where F: FnOnce() + Send + 'static
+    {
         self.run_after(Duration::zero(), job)
     }
 
-    pub fn run_after<F>(&self, dur: Duration, job: F) where F: FnOnce() + Send + 'static {
+    pub fn run_after<F>(&self, dur: Duration, job: F)
+        where F: FnOnce() + Send + 'static
+    {
         let job = Job {
             type_: JobType::Once(Thunk::new(job)),
             time: SteadyTime::now() + dur,
@@ -117,9 +119,14 @@ impl ScheduledThreadPool {
         self.shared.run(job)
     }
 
-    pub fn run_at_fixed_rate<F>(&self, rate: Duration, f: F) where F: FnMut() + Send + 'static {
+    pub fn run_at_fixed_rate<F>(&self, rate: Duration, f: F)
+        where F: FnMut() + Send + 'static
+    {
         let job = Job {
-            type_: JobType::FixedRate { f: Box::new(f), rate: rate },
+            type_: JobType::FixedRate {
+                f: Box::new(f),
+                rate: rate,
+            },
             time: SteadyTime::now() + rate,
         };
         self.shared.run(job)
@@ -190,7 +197,7 @@ impl Worker {
                         timeout = 0;
                     }
                     self.shared.cvar.wait_timeout_ms(inner, timeout as u32).unwrap().0
-                },
+                }
             };
         }
 
@@ -229,7 +236,7 @@ mod test {
         let (tx, rx) = channel();
         for _ in 0..TEST_TASKS {
             let tx = tx.clone();
-            pool.run(move|| {
+            pool.run(move || {
                 tx.send(1usize).unwrap();
             });
         }
@@ -279,7 +286,8 @@ mod test {
 
         let tx1 = tx.clone();
         pool.run_after(Duration::seconds(1), move || tx1.send(1usize).unwrap());
-        pool.run_after(Duration::milliseconds(500), move || tx.send(2usize).unwrap());
+        pool.run_after(Duration::milliseconds(500),
+                       move || tx.send(2usize).unwrap());
 
         assert_eq!(2, rx.recv().unwrap());
         assert_eq!(1, rx.recv().unwrap());
@@ -292,7 +300,8 @@ mod test {
 
         let tx1 = tx.clone();
         pool.run_after(Duration::seconds(1), move || tx1.send(1usize).unwrap());
-        pool.run_after(Duration::milliseconds(500), move || tx.send(2usize).unwrap());
+        pool.run_after(Duration::milliseconds(500),
+                       move || tx.send(2usize).unwrap());
 
         drop(pool);
 
