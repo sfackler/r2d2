@@ -414,20 +414,15 @@ impl<M> Pool<M> where M: ManageConnection
                     }
 
                     let now = SteadyTime::now();
-                    let mut timeout = (end - now).num_milliseconds();
-                    if timeout < 0 {
-                        timeout = 0
-                    };
-                    let (new_internals, no_timeout) = self.shared
-                                                          .cond
-                                                          .wait_timeout_ms(internals,
-                                                                           timeout as u32)
-                                                          .unwrap();
-                    internals = new_internals;
-
-                    if !no_timeout {
+                    let timeout = (end - now).num_milliseconds();
+                    if timeout <= 0 {
                         return Err(GetTimeout(()));
-                    }
+                    };
+                    internals = self.shared
+                                    .cond
+                                    .wait_timeout_ms(internals, timeout as u32)
+                                    .unwrap()
+                                    .0;
                 }
             }
         }
