@@ -8,25 +8,25 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-pub struct Thunk<'a, A=(),R=()> {
-    invoke: Box<Invoke<A,R>+Send + 'a>,
+pub struct Thunk<'a, A = (), R = ()> {
+    invoke: Box<Invoke<A, R> + Send + 'a>,
 }
 
-impl<'a, R> Thunk<'a,(),R> {
-    pub fn new<F>(func: F) -> Thunk<'a,(),R>
-        where F : FnOnce() -> R, F : Send + 'a
+impl<'a, R> Thunk<'a, (), R> {
+    pub fn new<F>(func: F) -> Thunk<'a, (), R>
+        where F: FnOnce() -> R,
+              F: Send + 'a
     {
-        Thunk::with_arg(move|()| func())
+        Thunk::with_arg(move |()| func())
     }
 }
 
-impl<'a,A,R> Thunk<'a,A,R> {
-    pub fn with_arg<F>(func: F) -> Thunk<'a,A,R>
-        where F : FnOnce(A) -> R, F : Send + 'a
+impl<'a, A, R> Thunk<'a, A, R> {
+    pub fn with_arg<F>(func: F) -> Thunk<'a, A, R>
+        where F: FnOnce(A) -> R,
+              F: Send + 'a
     {
-        Thunk {
-            invoke: Box::<F>::new(func)
-        }
+        Thunk { invoke: Box::<F>::new(func) }
     }
 
     pub fn invoke(self, arg: A) -> R {
@@ -39,8 +39,7 @@ pub trait Invoke<A=(),R=()> {
     fn invoke(self: Box<Self>, arg: A) -> R;
 }
 
-impl<A,R,F> Invoke<A,R> for F
-    where F : FnOnce(A) -> R
+impl<A, R, F> Invoke<A, R> for F where F: FnOnce(A) -> R
 {
     fn invoke(self: Box<F>, arg: A) -> R {
         let f = *self;

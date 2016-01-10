@@ -18,9 +18,7 @@ impl<C, E> Builder<C, E> {
     ///
     /// Parameters are initialized with their default values.
     pub fn new() -> Builder<C, E> {
-        Builder {
-            c: Config::default(),
-        }
+        Builder { c: Config::default() }
     }
 
     /// Sets `pool_size`.
@@ -69,7 +67,8 @@ impl<C, E> Builder<C, E> {
     ///
     /// Panics if `max_lifetime` is the zero `Duration`.
     pub fn max_lifetime(mut self, max_lifetime: Option<Duration>) -> Builder<C, E> {
-        assert!(max_lifetime != Some(Duration::from_secs(0)), "max_lifetime must be positive");
+        assert!(max_lifetime != Some(Duration::from_secs(0)),
+                "max_lifetime must be positive");
         self.c.max_lifetime = max_lifetime;
         self
     }
@@ -80,7 +79,8 @@ impl<C, E> Builder<C, E> {
     ///
     /// Panics if `idle_timeout` is the zero `Duration`.
     pub fn idle_timeout(mut self, idle_timeout: Option<Duration>) -> Builder<C, E> {
-        assert!(idle_timeout != Some(Duration::from_secs(0)), "idle_timeout must be positive");
+        assert!(idle_timeout != Some(Duration::from_secs(0)),
+                "idle_timeout must be positive");
         self.c.idle_timeout = idle_timeout;
         self
     }
@@ -91,7 +91,8 @@ impl<C, E> Builder<C, E> {
     ///
     /// Panics if `connection_timeout` is the zero duration
     pub fn connection_timeout(mut self, connection_timeout: Duration) -> Builder<C, E> {
-        assert!(connection_timeout > Duration::from_secs(0), "connection_timeout must be positive");
+        assert!(connection_timeout > Duration::from_secs(0),
+                "connection_timeout must be positive");
         self.c.connection_timeout = connection_timeout;
         self
     }
@@ -110,7 +111,8 @@ impl<C, E> Builder<C, E> {
     }
 
     /// Sets the `connection_customizer`.
-    pub fn connection_customizer(mut self, connection_customizer: Box<CustomizeConnection<C, E>>)
+    pub fn connection_customizer(mut self,
+                                 connection_customizer: Box<CustomizeConnection<C, E>>)
                                  -> Builder<C, E> {
         self.c.connection_customizer = connection_customizer;
         self
@@ -123,7 +125,8 @@ impl<C, E> Builder<C, E> {
     /// Panics if `min_idle` is larger than `pool_size`.
     pub fn build(self) -> Config<C, E> {
         if let Some(min_idle) = self.c.min_idle {
-            assert!(self.c.pool_size >= min_idle, "min_idle must be no larger than pool_size");
+            assert!(self.c.pool_size >= min_idle,
+                    "min_idle must be no larger than pool_size");
         }
 
         self.c
@@ -150,15 +153,15 @@ pub struct Config<C, E> {
 impl<C, E> fmt::Debug for Config<C, E> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.debug_struct("Config")
-            .field("pool_size", &self.pool_size)
-            .field("min_idle", &self.min_idle)
-            .field("helper_threads", &self.helper_threads)
-            .field("test_on_check_out", &self.test_on_check_out)
-            .field("initialization_fail_fast", &self.initialization_fail_fast)
-            .field("max_lifetmie", &self.max_lifetime)
-            .field("idle_timeout", &self.idle_timeout)
-            .field("connection_timeout", &self.connection_timeout)
-            .finish()
+           .field("pool_size", &self.pool_size)
+           .field("min_idle", &self.min_idle)
+           .field("helper_threads", &self.helper_threads)
+           .field("test_on_check_out", &self.test_on_check_out)
+           .field("initialization_fail_fast", &self.initialization_fail_fast)
+           .field("max_lifetmie", &self.max_lifetime)
+           .field("idle_timeout", &self.idle_timeout)
+           .field("connection_timeout", &self.connection_timeout)
+           .finish()
     }
 }
 
@@ -257,7 +260,7 @@ impl<C, E> Config<C, E> {
     /// Use `connection_timeout` instead.
     pub fn connection_timeout_ms(&self) -> u32 {
         self.connection_timeout.as_secs() as u32 * 1000 +
-            self.connection_timeout.subsec_nanos() / 1_000_000
+        self.connection_timeout.subsec_nanos() / 1_000_000
     }
 
     /// The handler for error reported in the pool.
@@ -284,12 +287,12 @@ mod test {
     #[test]
     fn builder() {
         let config = Config::<(), ()>::builder()
-            .pool_size(1)
-            .helper_threads(2)
-            .test_on_check_out(false)
-            .initialization_fail_fast(false)
-            .connection_timeout_ms(3 * 1000)
-            .build();
+                         .pool_size(1)
+                         .helper_threads(2)
+                         .test_on_check_out(false)
+                         .initialization_fail_fast(false)
+                         .connection_timeout_ms(3 * 1000)
+                         .build();
         assert_eq!(1, config.pool_size());
         assert_eq!(2, config.helper_threads());
         assert_eq!(false, config.test_on_check_out());

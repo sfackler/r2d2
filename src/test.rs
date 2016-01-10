@@ -82,7 +82,7 @@ fn test_acquire_release() {
 
 #[test]
 fn test_is_send_sync() {
-    fn is_send_sync<T: Send+Sync>() {}
+    fn is_send_sync<T: Send + Sync>() {}
     is_send_sync::<Pool<OkManager>>();
 }
 
@@ -119,9 +119,9 @@ fn test_issue_2_unlocked_during_is_valid() {
     let (s2, r2) = mpsc::sync_channel(0);
 
     let config = Config::builder()
-        .test_on_check_out(true)
-        .pool_size(2)
-        .build();
+                     .test_on_check_out(true)
+                     .pool_size(2)
+                     .build();
     let manager = BlockingChecker {
         first: AtomicBool::new(true),
         s: Mutex::new(s1),
@@ -184,20 +184,18 @@ fn test_drop_on_broken() {
 #[test]
 fn test_initialization_failure() {
     let config = Config::builder()
-        .connection_timeout_ms(1000)
-        .build();
-    let manager = NthConnectFailManager {
-        n: Mutex::new(0),
-    };
+                     .connection_timeout_ms(1000)
+                     .build();
+    let manager = NthConnectFailManager { n: Mutex::new(0) };
     Pool::new(config, manager).err().unwrap();
 }
 
 #[test]
 fn test_get_timeout() {
     let config = Config::builder()
-        .pool_size(1)
-        .connection_timeout(Duration::from_secs(1))
-        .build();
+                     .pool_size(1)
+                     .connection_timeout(Duration::from_secs(1))
+                     .build();
     let pool = Pool::new(config, OkManager).unwrap();
     let _c = pool.get().unwrap();
     pool.get().err().unwrap();
@@ -249,8 +247,8 @@ fn test_connection_customizer() {
     }
 
     let config = Config::builder()
-        .connection_customizer(Box::new(Customizer))
-        .build();
+                     .connection_customizer(Box::new(Customizer))
+                     .build();
     let pool = Pool::new(config, Handler).unwrap();
 
     let conn = pool.get().unwrap();
@@ -294,9 +292,9 @@ fn test_idle_timeout() {
     }
 
     let config = Config::builder()
-        .pool_size(5)
-        .idle_timeout(Some(Duration::from_secs(1)))
-        .build();
+                     .pool_size(5)
+                     .idle_timeout(Some(Duration::from_secs(1)))
+                     .build();
     let pool = Pool::new_inner(config, Handler(AtomicIsize::new(5)), 1).unwrap();
     let conn = pool.get().unwrap();
     thread::sleep(Duration::from_secs(2));
@@ -341,10 +339,10 @@ fn test_max_lifetime() {
     }
 
     let config = Config::builder()
-        .pool_size(5)
-        .max_lifetime(Some(Duration::from_secs(1)))
-        .connection_timeout(Duration::from_secs(1))
-        .build();
+                     .pool_size(5)
+                     .max_lifetime(Some(Duration::from_secs(1)))
+                     .connection_timeout(Duration::from_secs(1))
+                     .build();
     let pool = Pool::new_inner(config, Handler(AtomicIsize::new(5)), 1).unwrap();
     let conn = pool.get().unwrap();
     thread::sleep(Duration::from_secs(2));
@@ -353,4 +351,40 @@ fn test_max_lifetime() {
     thread::sleep(Duration::from_secs(2));
     assert_eq!(5, DROPPED.load(Ordering::SeqCst));
     assert!(pool.get().is_err());
+}
+
+#[test]
+fn min_idle() {
+    static CREATED: AtomicUsize = ATOMIC_USIZE_INIT;
+
+    struct Connection;
+
+    struct Handler;
+
+    impl ManageConnection for Handler {
+        type Connection = Connection;
+        type Error = ();
+
+        fn connect(&self) -> Result<Connection, ()> {
+            CREATED.fetch_add(1, Ordering::SeqCst);
+            Ok(Connection)
+        }
+
+        fn is_valid(&self, _: &mut Connection) -> Result<(), ()> {
+            Ok(())
+        }
+
+        fn has_broken(&self, _: &mut Connection) -> bool {
+            false
+        }
+    }
+
+    let config = Config::builder()
+                     .pool_size(5)
+                     .min_idle(Some(2))
+                     .build();
+    let pool = Pool::new(config, Handler).unwrap();
+    assert_eq!(2, CREATED.load(Ordering::SeqCst));
+    let _conns = (0..5).map(|_| pool.get().unwrap()).collect::<Vec<_>>();
+    assert_eq!(5, CREATED.load(Ordering::SeqCst));
 }
