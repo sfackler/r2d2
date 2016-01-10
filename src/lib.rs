@@ -413,14 +413,13 @@ impl<M> Pool<M> where M: ManageConnection
                         add_connection(&self.shared, &mut internals);
                     }
 
-                    let now = SteadyTime::now();
-                    let timeout = (end - now).num_milliseconds();
-                    if timeout <= 0 {
+                    let wait = end - SteadyTime::now();
+                    if wait <= Duration::zero() {
                         return Err(GetTimeout(()));
                     };
                     internals = self.shared
                                     .cond
-                                    .wait_timeout_ms(internals, timeout as u32)
+                                    .wait_timeout_ms(internals, wait.num_milliseconds() as u32)
                                     .unwrap()
                                     .0;
                 }
