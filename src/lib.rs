@@ -330,7 +330,7 @@ impl<M> Pool<M> where M: ManageConnection
                     return Err(InitializationError(()));
                 }
                 internals = shared.cond
-                                  .wait_timeout_ms(internals, wait.num_milliseconds() as u32)
+                                  .wait_timeout(internals, cvt_i(wait))
                                   .unwrap()
                                   .0;
             }
@@ -382,7 +382,7 @@ impl<M> Pool<M> where M: ManageConnection
                     };
                     internals = self.0
                                     .cond
-                                    .wait_timeout_ms(internals, wait.num_milliseconds() as u32)
+                                    .wait_timeout(internals, cvt_i(wait))
                                     .unwrap()
                                     .0;
                 }
@@ -484,4 +484,10 @@ impl<M> DerefMut for PooledConnection<M> where M: ManageConnection
 
 fn cvt(d: std::time::Duration) -> Duration {
     Duration::seconds(d.as_secs() as i64) + Duration::nanoseconds(d.subsec_nanos() as i64)
+}
+
+fn cvt_i(d: Duration) -> std::time::Duration {
+    let secs = d.num_seconds();
+    let nsec = (d - Duration::seconds(secs)).num_nanoseconds().unwrap();
+    std::time::Duration::new(secs as u64, nsec as u32)
 }

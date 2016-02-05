@@ -5,6 +5,7 @@ use std::thread;
 use time::{SteadyTime, Duration};
 
 use thunk::Thunk;
+use cvt_i;
 
 enum JobType {
     Once(Thunk<'static>),
@@ -192,11 +193,11 @@ impl Worker {
             inner = match need {
                 Need::Wait => self.shared.cvar.wait(inner).unwrap(),
                 Need::WaitTimeout(t) => {
-                    let mut timeout = t.num_milliseconds();
-                    if timeout < 0 {
-                        timeout = 0;
+                    if t >= Duration::zero() {
+                        self.shared.cvar.wait_timeout(inner, cvt_i(t)).unwrap().0
+                    } else {
+                        inner
                     }
-                    self.shared.cvar.wait_timeout_ms(inner, timeout as u32).unwrap().0
                 }
             };
         }
