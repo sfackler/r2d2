@@ -158,7 +158,7 @@ impl<C, E> fmt::Debug for Config<C, E> {
            .field("helper_threads", &self.helper_threads)
            .field("test_on_check_out", &self.test_on_check_out)
            .field("initialization_fail_fast", &self.initialization_fail_fast)
-           .field("max_lifetmie", &self.max_lifetime)
+           .field("max_lifetime", &self.max_lifetime)
            .field("idle_timeout", &self.idle_timeout)
            .field("connection_timeout", &self.connection_timeout)
            .finish()
