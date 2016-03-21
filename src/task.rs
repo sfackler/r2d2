@@ -276,8 +276,7 @@ mod test {
 
         let tx1 = tx.clone();
         pool.run_after(Duration::from_secs(1), move || tx1.send(1usize).unwrap());
-        pool.run_after(Duration::from_millis(500),
-                       move || tx.send(2usize).unwrap());
+        pool.run_after(Duration::from_millis(500), move || tx.send(2usize).unwrap());
 
         assert_eq!(2, rx.recv().unwrap());
         assert_eq!(1, rx.recv().unwrap());
@@ -290,8 +289,7 @@ mod test {
 
         let tx1 = tx.clone();
         pool.run_after(Duration::from_secs(1), move || tx1.send(1usize).unwrap());
-        pool.run_after(Duration::from_millis(500),
-                       move || tx.send(2usize).unwrap());
+        pool.run_after(Duration::from_millis(500), move || tx.send(2usize).unwrap());
 
         drop(pool);
 

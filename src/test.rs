@@ -326,7 +326,8 @@ fn test_idle_timeout() {
                      .pool_size(5)
                      .idle_timeout(Some(Duration::from_secs(1)))
                      .build();
-    let pool = Pool::new_inner(config, Handler(AtomicIsize::new(5)), Duration::from_secs(1)).unwrap();
+    let pool = Pool::new_inner(config, Handler(AtomicIsize::new(5)), Duration::from_secs(1))
+                   .unwrap();
     let conn = pool.get().unwrap();
     thread::sleep(Duration::from_secs(2));
     assert_eq!(4, DROPPED.load(Ordering::SeqCst));
@@ -374,7 +375,8 @@ fn test_max_lifetime() {
                      .max_lifetime(Some(Duration::from_secs(1)))
                      .connection_timeout(Duration::from_secs(1))
                      .build();
-    let pool = Pool::new_inner(config, Handler(AtomicIsize::new(5)), Duration::from_secs(1)).unwrap();
+    let pool = Pool::new_inner(config, Handler(AtomicIsize::new(5)), Duration::from_secs(1))
+                   .unwrap();
     let conn = pool.get().unwrap();
     thread::sleep(Duration::from_secs(2));
     assert_eq!(4, DROPPED.load(Ordering::SeqCst));

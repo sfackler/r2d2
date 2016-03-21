@@ -111,7 +111,8 @@ impl<E> HandleError<E> for NopErrorHandler {
 #[derive(Copy, Clone, Debug)]
 pub struct LoggingErrorHandler;
 
-impl<E> HandleError<E> for LoggingErrorHandler where E: Error
+impl<E> HandleError<E> for LoggingErrorHandler
+    where E: Error
 {
     fn handle_error(&self, error: E) {
         error!("{}", error);
@@ -261,14 +262,16 @@ fn reap_connections<M>(shared: &Weak<SharedPool<M>>)
 pub struct Pool<M: ManageConnection>(Arc<SharedPool<M>>);
 
 /// Returns a new `Pool` referencing the same state as `self`.
-impl<M> Clone for Pool<M> where M: ManageConnection
+impl<M> Clone for Pool<M>
+    where M: ManageConnection
 {
     fn clone(&self) -> Pool<M> {
         Pool(self.0.clone())
     }
 }
 
-impl<M> fmt::Debug for Pool<M> where M: ManageConnection + fmt::Debug
+impl<M> fmt::Debug for Pool<M>
+    where M: ManageConnection + fmt::Debug
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         let inner = self.0.internals.lock().unwrap();
@@ -282,7 +285,8 @@ impl<M> fmt::Debug for Pool<M> where M: ManageConnection + fmt::Debug
     }
 }
 
-impl<M> Pool<M> where M: ManageConnection
+impl<M> Pool<M>
+    where M: ManageConnection
 {
     /// Creates a new connection pool.
     ///
@@ -343,8 +347,7 @@ impl<M> Pool<M> where M: ManageConnection
         if shared.config.max_lifetime().is_some() || shared.config.idle_timeout().is_some() {
             let s = Arc::downgrade(&shared);
             shared.thread_pool
-                  .run_at_fixed_rate(reaper_rate,
-                                     move || reap_connections(&s));
+                  .run_at_fixed_rate(reaper_rate, move || reap_connections(&s));
         }
 
         Ok(Pool(shared))
