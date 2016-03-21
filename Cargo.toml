@@ -11,4 +11,3 @@ keywords = ["database", "pool"]
 
 [dependencies]
 log = "0.3"
-time = "0.1.22"

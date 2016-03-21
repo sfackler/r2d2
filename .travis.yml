@@ -2,7 +2,7 @@ language: rust
 rust:
 - nightly
 - beta
-- stable
+  #- stable
 script:
 - cargo test
 - cargo doc --no-deps

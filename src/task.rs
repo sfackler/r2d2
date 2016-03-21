@@ -2,10 +2,9 @@ use std::collections::BinaryHeap;
 use std::cmp::{PartialOrd, Ord, PartialEq, Eq, Ordering};
 use std::sync::{Arc, Mutex, Condvar};
 use std::thread;
-use time::{SteadyTime, Duration};
+use std::time::{Duration, Instant};
 
 use thunk::Thunk;
-use cvt_i;
 
 enum JobType {
     Once(Thunk<'static>),
@@ -17,7 +16,7 @@ enum JobType {
 
 struct Job {
     type_: JobType,
-    time: SteadyTime,
+    time: Instant,
 }
 
 impl PartialOrd for Job {
@@ -107,7 +106,7 @@ impl ScheduledThreadPool {
     pub fn run<F>(&self, job: F)
         where F: FnOnce() + Send + 'static
     {
-        self.run_after(Duration::zero(), job)
+        self.run_after(Duration::from_secs(0), job)
     }
 
     pub fn run_after<F>(&self, dur: Duration, job: F)
@@ -115,7 +114,7 @@ impl ScheduledThreadPool {
     {
         let job = Job {
             type_: JobType::Once(Thunk::new(job)),
-            time: SteadyTime::now() + dur,
+            time: Instant::now() + dur,
         };
         self.shared.run(job)
     }
@@ -128,7 +127,7 @@ impl ScheduledThreadPool {
                 f: Box::new(f),
                 rate: rate,
             },
-            time: SteadyTime::now() + rate,
+            time: Instant::now() + rate,
         };
         self.shared.run(job)
     }
@@ -177,7 +176,7 @@ impl Worker {
 
         let mut inner = self.shared.inner.lock().unwrap();
         loop {
-            let now = SteadyTime::now();
+            let now = Instant::now();
 
             let need = match inner.queue.peek() {
                 None if inner.shutdown => return None,
@@ -188,13 +187,7 @@ impl Worker {
 
             inner = match need {
                 Need::Wait => self.shared.cvar.wait(inner).unwrap(),
-                Need::WaitTimeout(t) => {
-                    if t >= Duration::zero() {
-                        self.shared.cvar.wait_timeout(inner, cvt_i(t)).unwrap().0
-                    } else {
-                        inner
-                    }
-                }
+                Need::WaitTimeout(t) => self.shared.cvar.wait_timeout(inner, t).unwrap().0,
             };
         }
 
@@ -220,7 +213,7 @@ impl Worker {
 mod test {
     use std::sync::mpsc::channel;
     use std::sync::{Arc, Barrier};
-    use time::Duration;
+    use std::time::Duration;
 
     use super::ScheduledThreadPool;
 
@@ -282,8 +275,8 @@ mod test {
         let (tx, rx) = channel();
 
         let tx1 = tx.clone();
-        pool.run_after(Duration::seconds(1), move || tx1.send(1usize).unwrap());
-        pool.run_after(Duration::milliseconds(500),
+        pool.run_after(Duration::from_secs(1), move || tx1.send(1usize).unwrap());
+        pool.run_after(Duration::from_millis(500),
                        move || tx.send(2usize).unwrap());
 
         assert_eq!(2, rx.recv().unwrap());
@@ -296,8 +289,8 @@ mod test {
         let (tx, rx) = channel();
 
         let tx1 = tx.clone();
-        pool.run_after(Duration::seconds(1), move || tx1.send(1usize).unwrap());
-        pool.run_after(Duration::milliseconds(500),
+        pool.run_after(Duration::from_secs(1), move || tx1.send(1usize).unwrap());
+        pool.run_after(Duration::from_millis(500),
                        move || tx.send(2usize).unwrap());
 
         drop(pool);
@@ -314,7 +307,7 @@ mod test {
 
         let mut pool2 = Some(pool.clone());
         let mut i = 0i32;
-        pool.run_at_fixed_rate(Duration::milliseconds(500), move || {
+        pool.run_at_fixed_rate(Duration::from_millis(500), move || {
             i += 1;
             tx.send(i).unwrap();
             rx2.recv().unwrap();
