@@ -39,7 +39,7 @@
 //! }
 //! ```
 #![warn(missing_docs)]
-#![doc(html_root_url="https://sfackler.github.io/r2d2/doc/v0.6.3")]
+#![doc(html_root_url="https://sfackler.github.io/r2d2/doc/v0.6.4")]
 
 #[macro_use]
 extern crate log;
@@ -51,7 +51,7 @@ use std::error::Error;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::mem;
-use std::sync::{Arc, Mutex, Condvar};
+use std::sync::{Arc, Weak, Mutex, Condvar};
 use time::{Duration, SteadyTime};
 
 #[doc(inline)]
@@ -175,13 +175,6 @@ struct SharedPool<M>
     thread_pool: ScheduledThreadPool,
 }
 
-impl<M> Drop for SharedPool<M> where M: ManageConnection
-{
-    fn drop(&mut self) {
-        self.thread_pool.clear();
-    }
-}
-
 fn drop_conn<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<M::Connection>)
     where M: ManageConnection
 {
@@ -202,9 +195,13 @@ fn add_connection<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<
     fn inner<M>(delay: Duration, shared: &Arc<SharedPool<M>>)
         where M: ManageConnection
     {
-        let new_shared = shared.clone();
+        let new_shared = Arc::downgrade(shared);
         shared.thread_pool.run_after(delay, move || {
-            let shared = new_shared;
+            let shared = match new_shared.upgrade() {
+                Some(shared) => shared,
+                None => return,
+            };
+
             let conn = shared.manager.connect().and_then(|mut conn| {
                 shared.config.connection_customizer().on_acquire(&mut conn).map(|_| conn)
             });
@@ -227,9 +224,14 @@ fn add_connection<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<
     }
 }
 
-fn reap_connections<M>(shared: &Arc<SharedPool<M>>)
+fn reap_connections<M>(shared: &Weak<SharedPool<M>>)
     where M: ManageConnection
 {
+    let shared = match shared.upgrade() {
+        Some(shared) => shared,
+        None => return,
+    };
+
     let mut old = VecDeque::with_capacity(shared.config.pool_size() as usize);
     let mut to_drop = vec![];
 
@@ -245,7 +247,7 @@ fn reap_connections<M>(shared: &Arc<SharedPool<M>>)
             reap |= now - conn.birth >= cvt(lifetime);
         }
         if reap {
-            drop_conn(shared, &mut internals);
+            drop_conn(&shared, &mut internals);
             to_drop.push(conn.conn);
         } else {
             internals.conns.push_back(conn);
@@ -255,63 +257,27 @@ fn reap_connections<M>(shared: &Arc<SharedPool<M>>)
 }
 
 /// A generic connection pool.
-pub struct Pool<M>
-    where M: ManageConnection
-{
-    shared: Arc<SharedPool<M>>,
-}
+pub struct Pool<M: ManageConnection>(Arc<SharedPool<M>>);
 
 /// Returns a new `Pool` referencing the same state as `self`.
 impl<M> Clone for Pool<M> where M: ManageConnection
 {
     fn clone(&self) -> Pool<M> {
-        Pool { shared: self.shared.clone() }
+        Pool(self.0.clone())
     }
 }
 
 impl<M> fmt::Debug for Pool<M> where M: ManageConnection + fmt::Debug
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        let inner = self.shared.internals.lock().unwrap();
+        let inner = self.0.internals.lock().unwrap();
 
         fmt.debug_struct("Pool")
            .field("connections", &inner.num_conns)
            .field("idle_connections", &inner.conns.len())
-           .field("config", &self.shared.config)
-           .field("manager", &self.shared.manager)
+           .field("config", &self.0.config)
+           .field("manager", &self.0.manager)
            .finish()
-    }
-}
-
-/// An error returned by `Pool::new` if it fails to initialize connections.
-#[derive(Debug)]
-pub struct InitializationError(());
-
-impl fmt::Display for InitializationError {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.write_str(self.description())
-    }
-}
-
-impl Error for InitializationError {
-    fn description(&self) -> &str {
-        "Unable to initialize connections"
-    }
-}
-
-/// An error returned by `Pool::get` if it times out without retrieving a connection.
-#[derive(Debug)]
-pub struct GetTimeout(());
-
-impl fmt::Display for GetTimeout {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.write_str(self.description())
-    }
-}
-
-impl Error for GetTimeout {
-    fn description(&self) -> &str {
-        "Timed out while waiting for a connection"
     }
 }
 
@@ -366,19 +332,19 @@ impl<M> Pool<M> where M: ManageConnection
                     return Err(InitializationError(()));
                 }
                 internals = shared.cond
-                                  .wait_timeout_ms(internals, wait.num_milliseconds() as u32)
+                                  .wait_timeout(internals, cvt_i(wait))
                                   .unwrap()
                                   .0;
             }
         }
 
         if shared.config.max_lifetime().is_some() || shared.config.idle_timeout().is_some() {
-            let s = shared.clone();
+            let s = Arc::downgrade(&shared);
             shared.thread_pool
                   .run_at_fixed_rate(Duration::seconds(reaper_rate), move || reap_connections(&s));
         }
 
-        Ok(Pool { shared: shared })
+        Ok(Pool(shared))
     }
 
     /// Retrieves a connection from the pool.
@@ -386,8 +352,8 @@ impl<M> Pool<M> where M: ManageConnection
     /// Waits for at most `Config::connection_timeout` before returning an
     /// error.
     pub fn get(&self) -> Result<PooledConnection<M>, GetTimeout> {
-        let end = SteadyTime::now() + cvt(self.shared.config.connection_timeout());
-        let mut internals = self.shared.internals.lock().unwrap();
+        let end = SteadyTime::now() + cvt(self.0.config.connection_timeout());
+        let mut internals = self.0.internals.lock().unwrap();
 
         let connection;
         loop {
@@ -395,11 +361,11 @@ impl<M> Pool<M> where M: ManageConnection
                 Some(mut conn) => {
                     drop(internals);
 
-                    if self.shared.config.test_on_check_out() {
-                        if let Err(e) = self.shared.manager.is_valid(&mut conn.conn) {
-                            self.shared.config.error_handler().handle_error(e);
-                            internals = self.shared.internals.lock().unwrap();
-                            drop_conn(&self.shared, &mut internals);
+                    if self.0.config.test_on_check_out() {
+                        if let Err(e) = self.0.manager.is_valid(&mut conn.conn) {
+                            self.0.config.error_handler().handle_error(e);
+                            internals = self.0.internals.lock().unwrap();
+                            drop_conn(&self.0, &mut internals);
                             continue;
                         }
                     }
@@ -408,18 +374,17 @@ impl<M> Pool<M> where M: ManageConnection
                     break;
                 }
                 None => {
-                    if internals.num_conns + internals.pending_conns <
-                       self.shared.config.pool_size() {
-                        add_connection(&self.shared, &mut internals);
+                    if internals.num_conns + internals.pending_conns < self.0.config.pool_size() {
+                        add_connection(&self.0, &mut internals);
                     }
 
                     let wait = end - SteadyTime::now();
                     if wait <= Duration::zero() {
                         return Err(GetTimeout(()));
                     };
-                    internals = self.shared
+                    internals = self.0
                                     .cond
-                                    .wait_timeout_ms(internals, wait.num_milliseconds() as u32)
+                                    .wait_timeout(internals, cvt_i(wait))
                                     .unwrap()
                                     .0;
                 }
@@ -434,16 +399,48 @@ impl<M> Pool<M> where M: ManageConnection
 
     fn put_back(&self, mut conn: Conn<M::Connection>) {
         // This is specified to be fast, but call it before locking anyways
-        let broken = self.shared.manager.has_broken(&mut conn.conn);
+        let broken = self.0.manager.has_broken(&mut conn.conn);
 
-        let mut internals = self.shared.internals.lock().unwrap();
+        let mut internals = self.0.internals.lock().unwrap();
         if broken {
-            drop_conn(&self.shared, &mut internals);
+            drop_conn(&self.0, &mut internals);
         } else {
             conn.idle_start = SteadyTime::now();
             internals.conns.push_back(conn);
-            self.shared.cond.notify_one();
+            self.0.cond.notify_one();
         }
+    }
+}
+
+/// An error returned by `Pool::new` if it fails to initialize connections.
+#[derive(Debug)]
+pub struct InitializationError(());
+
+impl fmt::Display for InitializationError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.write_str(self.description())
+    }
+}
+
+impl Error for InitializationError {
+    fn description(&self) -> &str {
+        "Unable to initialize connections"
+    }
+}
+
+/// An error returned by `Pool::get` if it times out without retrieving a connection.
+#[derive(Debug)]
+pub struct GetTimeout(());
+
+impl fmt::Display for GetTimeout {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.write_str(self.description())
+    }
+}
+
+impl Error for GetTimeout {
+    fn description(&self) -> &str {
+        "Timed out while waiting for a connection"
     }
 }
 
@@ -489,4 +486,10 @@ impl<M> DerefMut for PooledConnection<M> where M: ManageConnection
 
 fn cvt(d: std::time::Duration) -> Duration {
     Duration::seconds(d.as_secs() as i64) + Duration::nanoseconds(d.subsec_nanos() as i64)
+}
+
+fn cvt_i(d: Duration) -> std::time::Duration {
+    let secs = d.num_seconds();
+    let nsec = (d - Duration::seconds(secs)).num_nanoseconds().unwrap();
+    std::time::Duration::new(secs as u64, nsec as u32)
 }
