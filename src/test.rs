@@ -426,5 +426,11 @@ fn conns_drop_on_pool_drop() {
                     .build();
     let pool = Pool::new(config, Handler).unwrap();
     drop(pool);
-    assert_eq!(DROPPED.load(Ordering::SeqCst), 10);
+    for _ in 0..10 {
+        if DROPPED.load(Ordering::SeqCst) == 10 {
+            return;
+        }
+        thread::sleep(Duration::from_secs(1));
+    }
+    panic!("timed out waiting for connections to drop");
 }
