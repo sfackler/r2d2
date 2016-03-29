@@ -39,7 +39,7 @@
 //! }
 //! ```
 #![warn(missing_docs)]
-#![doc(html_root_url="https://sfackler.github.io/r2d2/doc/v0.6.3")]
+#![doc(html_root_url="https://sfackler.github.io/r2d2/doc/v0.6.4")]
 
 #[macro_use]
 extern crate log;
