@@ -444,7 +444,7 @@ fn conns_drop_on_pool_drop() {
             Ok(Connection)
         }
 
-        fn is_valid(&self, _: &mut Connection, _: Duration) -> Result<(), Error> {
+        fn is_valid(&self, _: &mut Connection) -> Result<(), Error> {
             Ok(())
         }
 
