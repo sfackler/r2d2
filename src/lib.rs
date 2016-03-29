@@ -51,7 +51,7 @@ use std::error::Error;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::mem;
-use std::sync::{Arc, Mutex, Condvar};
+use std::sync::{Arc, Weak, Mutex, Condvar};
 use time::{Duration, SteadyTime};
 
 #[doc(inline)]
@@ -175,13 +175,6 @@ struct SharedPool<M>
     thread_pool: ScheduledThreadPool,
 }
 
-impl<M> Drop for SharedPool<M> where M: ManageConnection
-{
-    fn drop(&mut self) {
-        self.thread_pool.clear();
-    }
-}
-
 fn drop_conn<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<M::Connection>)
     where M: ManageConnection
 {
@@ -202,9 +195,13 @@ fn add_connection<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<
     fn inner<M>(delay: Duration, shared: &Arc<SharedPool<M>>)
         where M: ManageConnection
     {
-        let new_shared = shared.clone();
+        let new_shared = Arc::downgrade(shared);
         shared.thread_pool.run_after(delay, move || {
-            let shared = new_shared;
+            let shared = match new_shared.upgrade() {
+                Some(shared) => shared,
+                None => return,
+            };
+
             let conn = shared.manager.connect().and_then(|mut conn| {
                 shared.config.connection_customizer().on_acquire(&mut conn).map(|_| conn)
             });
@@ -227,9 +224,14 @@ fn add_connection<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<
     }
 }
 
-fn reap_connections<M>(shared: &Arc<SharedPool<M>>)
+fn reap_connections<M>(shared: &Weak<SharedPool<M>>)
     where M: ManageConnection
 {
+    let shared = match shared.upgrade() {
+        Some(shared) => shared,
+        None => return,
+    };
+
     let mut old = VecDeque::with_capacity(shared.config.pool_size() as usize);
     let mut to_drop = vec![];
 
@@ -245,7 +247,7 @@ fn reap_connections<M>(shared: &Arc<SharedPool<M>>)
             reap |= now - conn.birth >= cvt(lifetime);
         }
         if reap {
-            drop_conn(shared, &mut internals);
+            drop_conn(&shared, &mut internals);
             to_drop.push(conn.conn);
         } else {
             internals.conns.push_back(conn);
@@ -337,7 +339,7 @@ impl<M> Pool<M> where M: ManageConnection
         }
 
         if shared.config.max_lifetime().is_some() || shared.config.idle_timeout().is_some() {
-            let s = shared.clone();
+            let s = Arc::downgrade(&shared);
             shared.thread_pool
                   .run_at_fixed_rate(Duration::seconds(reaper_rate), move || reap_connections(&s));
         }

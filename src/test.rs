@@ -388,3 +388,43 @@ fn min_idle() {
     let _conns = (0..5).map(|_| pool.get().unwrap()).collect::<Vec<_>>();
     assert_eq!(5, CREATED.load(Ordering::SeqCst));
 }
+
+#[test]
+fn conns_drop_on_pool_drop() {
+    static DROPPED: AtomicUsize = ATOMIC_USIZE_INIT;
+
+    struct Connection;
+
+    impl Drop for Connection {
+        fn drop(&mut self) {
+            DROPPED.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    struct Handler;
+
+    impl ManageConnection for Handler {
+        type Connection = Connection;
+        type Error = ();
+
+        fn connect(&self) -> Result<Connection, ()> {
+            Ok(Connection)
+        }
+
+        fn is_valid(&self, _: &mut Connection) -> Result<(), ()> {
+            Ok(())
+        }
+
+        fn has_broken(&self, _: &mut Connection) -> bool {
+            false
+        }
+    }
+
+    let config = Config::builder()
+                    .max_lifetime(Some(Duration::from_secs(10)))
+                    .pool_size(10)
+                    .build();
+    let pool = Pool::new(config, Handler).unwrap();
+    drop(pool);
+    assert_eq!(DROPPED.load(Ordering::SeqCst), 10);
+}

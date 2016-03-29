@@ -132,10 +132,6 @@ impl ScheduledThreadPool {
         };
         self.shared.run(job)
     }
-
-    pub fn clear(&self) {
-        self.shared.inner.lock().unwrap().queue.clear();
-    }
 }
 
 struct Worker {
