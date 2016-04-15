@@ -4,8 +4,25 @@ use std::sync::mpsc::{self, SyncSender, Receiver};
 use std::sync::{Mutex, Arc};
 use std::time::Duration;
 use std::thread;
+use std::fmt;
+use std::error;
 
 use {ManageConnection, CustomizeConnection, Pool, Config};
+
+#[derive(Debug)]
+pub struct Error;
+
+impl fmt::Display for Error {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.write_str("blammo")
+    }
+}
+
+impl error::Error for Error {
+    fn description(&self) -> &str {
+        "Error"
+    }
+}
 
 #[derive(Debug, PartialEq)]
 struct FakeConnection(bool);
@@ -14,13 +31,13 @@ struct OkManager;
 
 impl ManageConnection for OkManager {
     type Connection = FakeConnection;
-    type Error = ();
+    type Error = Error;
 
-    fn connect(&self) -> Result<FakeConnection, ()> {
+    fn connect(&self) -> Result<FakeConnection, Error> {
         Ok(FakeConnection(true))
     }
 
-    fn is_valid(&self, _: &mut FakeConnection) -> Result<(), ()> {
+    fn is_valid(&self, _: &mut FakeConnection) -> Result<(), Error> {
         Ok(())
     }
 
@@ -35,19 +52,19 @@ struct NthConnectFailManager {
 
 impl ManageConnection for NthConnectFailManager {
     type Connection = FakeConnection;
-    type Error = ();
+    type Error = Error;
 
-    fn connect(&self) -> Result<FakeConnection, ()> {
+    fn connect(&self) -> Result<FakeConnection, Error> {
         let mut n = self.n.lock().unwrap();
         if *n > 0 {
             *n -= 1;
             Ok(FakeConnection(true))
         } else {
-            Err(())
+            Err(Error)
         }
     }
 
-    fn is_valid(&self, _: &mut FakeConnection) -> Result<(), ()> {
+    fn is_valid(&self, _: &mut FakeConnection) -> Result<(), Error> {
         Ok(())
     }
 
@@ -96,13 +113,13 @@ fn test_issue_2_unlocked_during_is_valid() {
 
     impl ManageConnection for BlockingChecker {
         type Connection = FakeConnection;
-        type Error = ();
+        type Error = Error;
 
-        fn connect(&self) -> Result<FakeConnection, ()> {
+        fn connect(&self) -> Result<FakeConnection, Error> {
             Ok(FakeConnection(true))
         }
 
-        fn is_valid(&self, _: &mut FakeConnection) -> Result<(), ()> {
+        fn is_valid(&self, _: &mut FakeConnection) -> Result<(), Error> {
             if self.first.compare_and_swap(true, false, Ordering::SeqCst) {
                 self.s.lock().unwrap().send(()).unwrap();
                 self.r.lock().unwrap().recv().unwrap();
@@ -159,13 +176,13 @@ fn test_drop_on_broken() {
 
     impl ManageConnection for Handler {
         type Connection = Connection;
-        type Error = ();
+        type Error = Error;
 
-        fn connect(&self) -> Result<Connection, ()> {
+        fn connect(&self) -> Result<Connection, Error> {
             Ok(Connection)
         }
 
-        fn is_valid(&self, _: &mut Connection) -> Result<(), ()> {
+        fn is_valid(&self, _: &mut Connection) -> Result<(), Error> {
             Ok(())
         }
 
@@ -184,10 +201,23 @@ fn test_drop_on_broken() {
 #[test]
 fn test_initialization_failure() {
     let config = Config::builder()
-                     .connection_timeout_ms(1000)
+                     .connection_timeout(Duration::from_secs(1))
                      .build();
     let manager = NthConnectFailManager { n: Mutex::new(0) };
-    Pool::new(config, manager).err().unwrap();
+    let err = Pool::new(config, manager).err().unwrap();
+    assert!(err.to_string().contains("blammo"));
+}
+
+#[test]
+fn test_lazy_initialization_failure() {
+    let config = Config::builder()
+                     .connection_timeout(Duration::from_secs(1))
+                     .initialization_fail_fast(false)
+                     .build();
+    let manager = NthConnectFailManager { n: Mutex::new(0) };
+    let pool = Pool::new(config, manager).unwrap();
+    let err = pool.get().err().unwrap();
+    assert!(err.to_string().contains("blammo"));
 }
 
 #[test]
@@ -218,13 +248,13 @@ fn test_connection_customizer() {
 
     impl ManageConnection for Handler {
         type Connection = Connection;
-        type Error = ();
+        type Error = Error;
 
-        fn connect(&self) -> Result<Connection, ()> {
+        fn connect(&self) -> Result<Connection, Error> {
             Ok(Connection(0))
         }
 
-        fn is_valid(&self, _: &mut Connection) -> Result<(), ()> {
+        fn is_valid(&self, _: &mut Connection) -> Result<(), Error> {
             Ok(())
         }
 
@@ -233,12 +263,13 @@ fn test_connection_customizer() {
         }
     }
 
+    #[derive(Debug)]
     struct Customizer;
 
-    impl CustomizeConnection<Connection, ()> for Customizer {
-        fn on_acquire(&self, conn: &mut Connection) -> Result<(), ()> {
+    impl CustomizeConnection<Connection, Error> for Customizer {
+        fn on_acquire(&self, conn: &mut Connection) -> Result<(), Error> {
             if !DROPPED.load(Ordering::SeqCst) {
-                Err(())
+                Err(Error)
             } else {
                 conn.0 = 1;
                 Ok(())
@@ -272,17 +303,17 @@ fn test_idle_timeout() {
 
     impl ManageConnection for Handler {
         type Connection = Connection;
-        type Error = ();
+        type Error = Error;
 
-        fn connect(&self) -> Result<Connection, ()> {
+        fn connect(&self) -> Result<Connection, Error> {
             if self.0.fetch_sub(1, Ordering::SeqCst) > 0 {
                 Ok(Connection)
             } else {
-                Err(())
+                Err(Error)
             }
         }
 
-        fn is_valid(&self, _: &mut Connection) -> Result<(), ()> {
+        fn is_valid(&self, _: &mut Connection) -> Result<(), Error> {
             Ok(())
         }
 
@@ -295,7 +326,8 @@ fn test_idle_timeout() {
                      .pool_size(5)
                      .idle_timeout(Some(Duration::from_secs(1)))
                      .build();
-    let pool = Pool::new_inner(config, Handler(AtomicIsize::new(5)), 1).unwrap();
+    let pool = Pool::new_inner(config, Handler(AtomicIsize::new(5)), Duration::from_secs(1))
+                   .unwrap();
     let conn = pool.get().unwrap();
     thread::sleep(Duration::from_secs(2));
     assert_eq!(4, DROPPED.load(Ordering::SeqCst));
@@ -319,17 +351,17 @@ fn test_max_lifetime() {
 
     impl ManageConnection for Handler {
         type Connection = Connection;
-        type Error = ();
+        type Error = Error;
 
-        fn connect(&self) -> Result<Connection, ()> {
+        fn connect(&self) -> Result<Connection, Error> {
             if self.0.fetch_sub(1, Ordering::SeqCst) > 0 {
                 Ok(Connection)
             } else {
-                Err(())
+                Err(Error)
             }
         }
 
-        fn is_valid(&self, _: &mut Connection) -> Result<(), ()> {
+        fn is_valid(&self, _: &mut Connection) -> Result<(), Error> {
             Ok(())
         }
 
@@ -343,7 +375,8 @@ fn test_max_lifetime() {
                      .max_lifetime(Some(Duration::from_secs(1)))
                      .connection_timeout(Duration::from_secs(1))
                      .build();
-    let pool = Pool::new_inner(config, Handler(AtomicIsize::new(5)), 1).unwrap();
+    let pool = Pool::new_inner(config, Handler(AtomicIsize::new(5)), Duration::from_secs(1))
+                   .unwrap();
     let conn = pool.get().unwrap();
     thread::sleep(Duration::from_secs(2));
     assert_eq!(4, DROPPED.load(Ordering::SeqCst));
@@ -363,14 +396,14 @@ fn min_idle() {
 
     impl ManageConnection for Handler {
         type Connection = Connection;
-        type Error = ();
+        type Error = Error;
 
-        fn connect(&self) -> Result<Connection, ()> {
+        fn connect(&self) -> Result<Connection, Error> {
             CREATED.fetch_add(1, Ordering::SeqCst);
             Ok(Connection)
         }
 
-        fn is_valid(&self, _: &mut Connection) -> Result<(), ()> {
+        fn is_valid(&self, _: &mut Connection) -> Result<(), Error> {
             Ok(())
         }
 
@@ -405,13 +438,13 @@ fn conns_drop_on_pool_drop() {
 
     impl ManageConnection for Handler {
         type Connection = Connection;
-        type Error = ();
+        type Error = Error;
 
-        fn connect(&self) -> Result<Connection, ()> {
+        fn connect(&self) -> Result<Connection, Error> {
             Ok(Connection)
         }
 
-        fn is_valid(&self, _: &mut Connection) -> Result<(), ()> {
+        fn is_valid(&self, _: &mut Connection) -> Result<(), Error> {
             Ok(())
         }
 
@@ -421,9 +454,9 @@ fn conns_drop_on_pool_drop() {
     }
 
     let config = Config::builder()
-                    .max_lifetime(Some(Duration::from_secs(10)))
-                    .pool_size(10)
-                    .build();
+                     .max_lifetime(Some(Duration::from_secs(10)))
+                     .pool_size(10)
+                     .build();
     let pool = Pool::new(config, Handler).unwrap();
     drop(pool);
     for _ in 0..10 {

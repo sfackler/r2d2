@@ -5,7 +5,7 @@ A generic connection pool for Rust.
 
 [![Build Status](https://travis-ci.org/sfackler/r2d2.svg?branch=master)](https://travis-ci.org/sfackler/r2d2) [![Latest Version](https://img.shields.io/crates/v/r2d2.svg)](https://crates.io/crates/r2d2)
 
-[Documentation](https://sfackler.github.io/r2d2/doc/v0.6.4/r2d2)
+[Documentation](https://sfackler.github.io/r2d2/doc/v0.7.0/r2d2)
 
 Opening a new database connection every time one is needed is both inefficient
 and can lead to resource exhaustion under high traffic conditions. A connection
@@ -39,7 +39,6 @@ extern crate r2d2_foodb;
 fn main() {
     let config = r2d2::Config::builder()
         .pool_size(15)
-        .error_handler(Box::new(r2d2::LoggingErrorHandler))
         .build();
     let manager = r2d2_foodb::FooConnectionManager::new("localhost:1234");
 
@@ -55,3 +54,17 @@ fn main() {
     }
 }
 ```
+
+## License
+
+Licensed under either of
+ * Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+ * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you shall be dual licensed as above, without any
+additional terms or conditions.
