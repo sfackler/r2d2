@@ -454,9 +454,9 @@ fn conns_drop_on_pool_drop() {
     }
 
     let config = Config::builder()
-                    .max_lifetime(Some(Duration::from_secs(10)))
-                    .pool_size(10)
-                    .build();
+                     .max_lifetime(Some(Duration::from_secs(10)))
+                     .pool_size(10)
+                     .build();
     let pool = Pool::new(config, Handler).unwrap();
     drop(pool);
     for _ in 0..10 {

@@ -477,14 +477,16 @@ impl<M> fmt::Debug for PooledConnection<M>
     }
 }
 
-impl<M> Drop for PooledConnection<M> where M: ManageConnection
+impl<M> Drop for PooledConnection<M>
+    where M: ManageConnection
 {
     fn drop(&mut self) {
         self.pool.put_back(self.conn.take().unwrap());
     }
 }
 
-impl<M> Deref for PooledConnection<M> where M: ManageConnection
+impl<M> Deref for PooledConnection<M>
+    where M: ManageConnection
 {
     type Target = M::Connection;
 
@@ -493,7 +495,8 @@ impl<M> Deref for PooledConnection<M> where M: ManageConnection
     }
 }
 
-impl<M> DerefMut for PooledConnection<M> where M: ManageConnection
+impl<M> DerefMut for PooledConnection<M>
+    where M: ManageConnection
 {
     fn deref_mut(&mut self) -> &mut M::Connection {
         &mut self.conn.as_mut().unwrap().conn
