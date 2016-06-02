@@ -154,7 +154,7 @@ impl Worker {
             shared: shared,
         };
         thread::Builder::new()
-            .name(format!("ScheduledThreadPool worker {}", i))
+            .name(format!("r2d2-worker-{}", i))
             .spawn(move || worker.run())
             .unwrap();
     }
