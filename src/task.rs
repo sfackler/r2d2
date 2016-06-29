@@ -1,6 +1,7 @@
+use antidote::{Mutex, Condvar};
 use std::collections::BinaryHeap;
 use std::cmp::{PartialOrd, Ord, PartialEq, Eq, Ordering};
-use std::sync::{Arc, Mutex, Condvar};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -52,7 +53,7 @@ struct SharedPool {
 
 impl SharedPool {
     fn run(&self, job: Job) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
 
         // Calls from the pool itself will never hit this, but calls from workers might
         if inner.shutdown {
@@ -74,7 +75,7 @@ pub struct ScheduledThreadPool {
 
 impl Drop for ScheduledThreadPool {
     fn drop(&mut self) {
-        self.shared.inner.lock().unwrap().shutdown = true;
+        self.shared.inner.lock().shutdown = true;
         self.shared.cvar.notify_all();
     }
 }
@@ -174,7 +175,7 @@ impl Worker {
             WaitTimeout(Duration),
         }
 
-        let mut inner = self.shared.inner.lock().unwrap();
+        let mut inner = self.shared.inner.lock();
         loop {
             let now = Instant::now();
 
@@ -186,8 +187,8 @@ impl Worker {
             };
 
             inner = match need {
-                Need::Wait => self.shared.cvar.wait(inner).unwrap(),
-                Need::WaitTimeout(t) => self.shared.cvar.wait_timeout(inner, t).unwrap().0,
+                Need::Wait => self.shared.cvar.wait(inner),
+                Need::WaitTimeout(t) => self.shared.cvar.wait_timeout(inner, t).0,
             };
         }
 
