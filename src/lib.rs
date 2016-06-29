@@ -146,22 +146,15 @@ impl<C, E> CustomizeConnection<C, E> for NopConnectionCustomizer {}
 struct Conn<C> {
     conn: C,
     birth: Instant,
+}
+
+struct IdleConn<C> {
+    conn: Conn<C>,
     idle_start: Instant,
 }
 
-impl<C> Conn<C> {
-    fn new(conn: C) -> Conn<C> {
-        let now = Instant::now();
-        Conn {
-            conn: conn,
-            birth: now,
-            idle_start: now,
-        }
-    }
-}
-
 struct PoolInternals<C> {
-    conns: VecDeque<Conn<C>>,
+    conns: VecDeque<IdleConn<C>>,
     num_conns: u32,
     pending_conns: u32,
     last_error: Option<String>,
@@ -211,7 +204,15 @@ fn add_connection<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<
                 Ok(conn) => {
                     let mut internals = shared.internals.lock();
                     internals.last_error = None;
-                    internals.conns.push_back(Conn::new(conn));
+                    let now = Instant::now();
+                    let conn = IdleConn {
+                        conn: Conn {
+                            conn: conn,
+                            birth: now,
+                        },
+                        idle_start: now,
+                    };
+                    internals.conns.push_back(conn);
                     internals.pending_conns -= 1;
                     internals.num_conns += 1;
                     shared.cond.notify_one();
@@ -248,11 +249,11 @@ fn reap_connections<M>(shared: &Weak<SharedPool<M>>)
             reap |= now - conn.idle_start >= timeout;
         }
         if let Some(lifetime) = shared.config.max_lifetime() {
-            reap |= now - conn.birth >= lifetime;
+            reap |= now - conn.conn.birth >= lifetime;
         }
         if reap {
             drop_conn(&shared, &mut internals);
-            to_drop.push(conn.conn);
+            to_drop.push(conn.conn.conn);
         } else {
             internals.conns.push_back(conn);
         }
@@ -369,7 +370,7 @@ impl<M> Pool<M>
                     drop(internals);
 
                     if self.0.config.test_on_check_out() {
-                        if let Err(e) = self.0.manager.is_valid(&mut conn.conn) {
+                        if let Err(e) = self.0.manager.is_valid(&mut conn.conn.conn) {
                             let msg = e.to_string();
                             self.0.config.error_handler().handle_error(e);
                             internals = self.0.internals.lock();
@@ -379,7 +380,7 @@ impl<M> Pool<M>
                         }
                     }
 
-                    connection = conn;
+                    connection = conn.conn;
                     break;
                 }
                 None => {
@@ -413,7 +414,10 @@ impl<M> Pool<M>
         if broken {
             drop_conn(&self.0, &mut internals);
         } else {
-            conn.idle_start = Instant::now();
+            let conn = IdleConn {
+                conn: conn,
+                idle_start: Instant::now(),
+            };
             internals.conns.push_back(conn);
             self.0.cond.notify_one();
         }
