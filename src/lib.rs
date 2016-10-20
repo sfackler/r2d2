@@ -277,12 +277,9 @@ impl<M> fmt::Debug for Pool<M>
     where M: ManageConnection + fmt::Debug
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        let inner = self.0.internals.lock();
-
         fmt.debug_struct("Pool")
-           .field("connections", &inner.num_conns)
-           .field("idle_connections", &inner.conns.len())
-           .field("config", &self.0.config)
+           .field("state", &self.state())
+           .field("config", self.config())
            .field("manager", &self.0.manager)
            .finish()
     }
@@ -355,19 +352,17 @@ impl<M> Pool<M>
         Ok(Pool(shared))
     }
 
-    /// Retrieves the current number of connections in the pool.
-    pub fn connections(&self) -> u32 {
+    /// Returns information about the current state of the pool.
+    pub fn state(&self) -> State {
         let internals = self.0.internals.lock();
-        internals.num_conns
+        State {
+            connections: internals.num_conns,
+            idle_connections: internals.conns.len() as u32,
+            _p: (),
+        }
     }
 
-    /// Retrieves the current number of idle connections in the pool.
-    pub fn idle_connections(&self) -> usize {
-        let internals = self.0.internals.lock();
-        internals.conns.len()
-    }
-
-    /// Retrieves the current configuration.
+    /// Returns the pool's configuration.
     pub fn config(&self) -> &Config<M::Connection, M::Error> {
         &self.0.config
     }
@@ -478,6 +473,24 @@ impl fmt::Display for GetTimeout {
 impl Error for GetTimeout {
     fn description(&self) -> &str {
         "Timed out while waiting for a connection"
+    }
+}
+
+/// Information about the state of a `Pool`.
+pub struct State {
+    /// The number of connections currently being managed by the pool.
+    pub connections: u32,
+    /// The number of idle connections.
+    pub idle_connections: u32,
+    _p: (),
+}
+
+impl fmt::Debug for State {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.debug_struct("State")
+            .field("connections", &self.connections)
+            .field("idle_connections", &self.idle_connections)
+            .finish()
     }
 }
 
