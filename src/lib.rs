@@ -355,6 +355,23 @@ impl<M> Pool<M>
         Ok(Pool(shared))
     }
 
+    /// Retrieves the current number of connections in the pool.
+    pub fn connections(&self) -> u32 {
+        let internals = self.0.internals.lock();
+        internals.num_conns
+    }
+
+    /// Retrieves the current number of idle connections in the pool.
+    pub fn idle_connections(&self) -> usize {
+        let internals = self.0.internals.lock();
+        internals.conns.len()
+    }
+
+    /// Retrieves the current configuration.
+    pub fn config(&self) -> &Config<M::Connection, M::Error> {
+        &self.0.config
+    }
+
     /// Retrieves a connection from the pool.
     ///
     /// Waits for at most `Config::connection_timeout` before returning an
