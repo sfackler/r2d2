@@ -38,18 +38,20 @@
 //! }
 //! ```
 #![warn(missing_docs)]
-#![doc(html_root_url="https://sfackler.github.io/r2d2/doc/v0.7.0")]
+#![doc(html_root_url="https://sfackler.github.io/r2d2/doc/v0.7.1")]
 
+extern crate antidote;
 #[macro_use]
 extern crate log;
 
+use antidote::{Mutex, Condvar};
 use std::cmp;
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::mem;
-use std::sync::{Arc, Weak, Mutex, Condvar};
+use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 #[doc(inline)]
@@ -144,22 +146,15 @@ impl<C, E> CustomizeConnection<C, E> for NopConnectionCustomizer {}
 struct Conn<C> {
     conn: C,
     birth: Instant,
+}
+
+struct IdleConn<C> {
+    conn: Conn<C>,
     idle_start: Instant,
 }
 
-impl<C> Conn<C> {
-    fn new(conn: C) -> Conn<C> {
-        let now = Instant::now();
-        Conn {
-            conn: conn,
-            birth: now,
-            idle_start: now,
-        }
-    }
-}
-
 struct PoolInternals<C> {
-    conns: VecDeque<Conn<C>>,
+    conns: VecDeque<IdleConn<C>>,
     num_conns: u32,
     pending_conns: u32,
     last_error: Option<String>,
@@ -207,15 +202,23 @@ fn add_connection<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<
             });
             match conn {
                 Ok(conn) => {
-                    let mut internals = shared.internals.lock().unwrap();
+                    let mut internals = shared.internals.lock();
                     internals.last_error = None;
-                    internals.conns.push_back(Conn::new(conn));
+                    let now = Instant::now();
+                    let conn = IdleConn {
+                        conn: Conn {
+                            conn: conn,
+                            birth: now,
+                        },
+                        idle_start: now,
+                    };
+                    internals.conns.push_back(conn);
                     internals.pending_conns -= 1;
                     internals.num_conns += 1;
                     shared.cond.notify_one();
                 }
                 Err(err) => {
-                    shared.internals.lock().unwrap().last_error = Some(err.to_string());
+                    shared.internals.lock().last_error = Some(err.to_string());
                     shared.config.error_handler().handle_error(err);
                     let delay = cmp::max(Duration::from_millis(200), delay);
                     let delay = cmp::min(shared.config.connection_timeout() / 2, delay * 2);
@@ -237,7 +240,7 @@ fn reap_connections<M>(shared: &Weak<SharedPool<M>>)
     let mut old = VecDeque::with_capacity(shared.config.pool_size() as usize);
     let mut to_drop = vec![];
 
-    let mut internals = shared.internals.lock().unwrap();
+    let mut internals = shared.internals.lock();
     mem::swap(&mut old, &mut internals.conns);
     let now = Instant::now();
     for conn in old {
@@ -246,11 +249,11 @@ fn reap_connections<M>(shared: &Weak<SharedPool<M>>)
             reap |= now - conn.idle_start >= timeout;
         }
         if let Some(lifetime) = shared.config.max_lifetime() {
-            reap |= now - conn.birth >= lifetime;
+            reap |= now - conn.conn.birth >= lifetime;
         }
         if reap {
             drop_conn(&shared, &mut internals);
-            to_drop.push(conn.conn);
+            to_drop.push(conn.conn.conn);
         } else {
             internals.conns.push_back(conn);
         }
@@ -274,12 +277,9 @@ impl<M> fmt::Debug for Pool<M>
     where M: ManageConnection + fmt::Debug
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        let inner = self.0.internals.lock().unwrap();
-
         fmt.debug_struct("Pool")
-           .field("connections", &inner.num_conns)
-           .field("idle_connections", &inner.conns.len())
-           .field("config", &self.0.config)
+           .field("state", &self.state())
+           .field("config", self.config())
            .field("manager", &self.0.manager)
            .finish()
     }
@@ -321,7 +321,7 @@ impl<M> Pool<M>
 
         let initial_size = shared.config.min_idle().unwrap_or(shared.config.pool_size());
         {
-            let mut inner = shared.internals.lock().unwrap();
+            let mut inner = shared.internals.lock();
             for _ in 0..initial_size {
                 add_connection(&shared, &mut inner);
             }
@@ -330,7 +330,7 @@ impl<M> Pool<M>
 
         if shared.config.initialization_fail_fast() {
             let end = Instant::now() + shared.config.connection_timeout();
-            let mut internals = shared.internals.lock().unwrap();
+            let mut internals = shared.internals.lock();
 
             while internals.num_conns != initial_size {
                 let now = Instant::now();
@@ -339,7 +339,6 @@ impl<M> Pool<M>
                 }
                 internals = shared.cond
                                   .wait_timeout(internals, end - now)
-                                  .unwrap()
                                   .0;
             }
         }
@@ -353,13 +352,28 @@ impl<M> Pool<M>
         Ok(Pool(shared))
     }
 
+    /// Returns information about the current state of the pool.
+    pub fn state(&self) -> State {
+        let internals = self.0.internals.lock();
+        State {
+            connections: internals.num_conns,
+            idle_connections: internals.conns.len() as u32,
+            _p: (),
+        }
+    }
+
+    /// Returns the pool's configuration.
+    pub fn config(&self) -> &Config<M::Connection, M::Error> {
+        &self.0.config
+    }
+
     /// Retrieves a connection from the pool.
     ///
     /// Waits for at most `Config::connection_timeout` before returning an
     /// error.
     pub fn get(&self) -> Result<PooledConnection<M>, GetTimeout> {
         let end = Instant::now() + self.0.config.connection_timeout();
-        let mut internals = self.0.internals.lock().unwrap();
+        let mut internals = self.0.internals.lock();
 
         let connection;
         loop {
@@ -368,17 +382,17 @@ impl<M> Pool<M>
                     drop(internals);
 
                     if self.0.config.test_on_check_out() {
-                        if let Err(e) = self.0.manager.is_valid(&mut conn.conn) {
+                        if let Err(e) = self.0.manager.is_valid(&mut conn.conn.conn) {
                             let msg = e.to_string();
                             self.0.config.error_handler().handle_error(e);
-                            internals = self.0.internals.lock().unwrap();
+                            internals = self.0.internals.lock();
                             internals.last_error = Some(msg);
                             drop_conn(&self.0, &mut internals);
                             continue;
                         }
                     }
 
-                    connection = conn;
+                    connection = conn.conn;
                     break;
                 }
                 None => {
@@ -393,7 +407,6 @@ impl<M> Pool<M>
                     internals = self.0
                                     .cond
                                     .wait_timeout(internals, end - now)
-                                    .unwrap()
                                     .0;
                 }
             }
@@ -409,11 +422,14 @@ impl<M> Pool<M>
         // This is specified to be fast, but call it before locking anyways
         let broken = self.0.manager.has_broken(&mut conn.conn);
 
-        let mut internals = self.0.internals.lock().unwrap();
+        let mut internals = self.0.internals.lock();
         if broken {
             drop_conn(&self.0, &mut internals);
         } else {
-            conn.idle_start = Instant::now();
+            let conn = IdleConn {
+                conn: conn,
+                idle_start: Instant::now(),
+            };
             internals.conns.push_back(conn);
             self.0.cond.notify_one();
         }
@@ -457,6 +473,24 @@ impl fmt::Display for GetTimeout {
 impl Error for GetTimeout {
     fn description(&self) -> &str {
         "Timed out while waiting for a connection"
+    }
+}
+
+/// Information about the state of a `Pool`.
+pub struct State {
+    /// The number of connections currently being managed by the pool.
+    pub connections: u32,
+    /// The number of idle connections.
+    pub idle_connections: u32,
+    _p: (),
+}
+
+impl fmt::Debug for State {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.debug_struct("State")
+            .field("connections", &self.connections)
+            .field("idle_connections", &self.idle_connections)
+            .finish()
     }
 }
 
