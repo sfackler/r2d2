@@ -38,7 +38,7 @@
 //! }
 //! ```
 #![warn(missing_docs)]
-#![doc(html_root_url="https://sfackler.github.io/r2d2/doc/v0.7.0")]
+#![doc(html_root_url="https://sfackler.github.io/r2d2/doc/v0.7.1")]
 
 extern crate antidote;
 #[macro_use]
