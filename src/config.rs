@@ -148,17 +148,17 @@ pub struct Config<C, E> {
 impl<C, E> fmt::Debug for Config<C, E> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.debug_struct("Config")
-           .field("pool_size", &self.pool_size)
-           .field("min_idle", &self.min_idle)
-           .field("helper_threads", &self.helper_threads)
-           .field("test_on_check_out", &self.test_on_check_out)
-           .field("initialization_fail_fast", &self.initialization_fail_fast)
-           .field("max_lifetime", &self.max_lifetime)
-           .field("idle_timeout", &self.idle_timeout)
-           .field("connection_timeout", &self.connection_timeout)
-           .field("error_handler", &self.error_handler)
-           .field("connection_customizer", &self.connection_customizer)
-           .finish()
+            .field("pool_size", &self.pool_size)
+            .field("min_idle", &self.min_idle)
+            .field("helper_threads", &self.helper_threads)
+            .field("test_on_check_out", &self.test_on_check_out)
+            .field("initialization_fail_fast", &self.initialization_fail_fast)
+            .field("max_lifetime", &self.max_lifetime)
+            .field("idle_timeout", &self.idle_timeout)
+            .field("connection_timeout", &self.connection_timeout)
+            .field("error_handler", &self.error_handler)
+            .field("connection_customizer", &self.connection_customizer)
+            .finish()
     }
 }
 
@@ -277,12 +277,12 @@ mod test {
     #[test]
     fn builder() {
         let config = Config::<(), Error>::builder()
-                         .pool_size(1)
-                         .helper_threads(2)
-                         .test_on_check_out(false)
-                         .initialization_fail_fast(false)
-                         .connection_timeout(Duration::from_secs(3))
-                         .build();
+            .pool_size(1)
+            .helper_threads(2)
+            .test_on_check_out(false)
+            .initialization_fail_fast(false)
+            .connection_timeout(Duration::from_secs(3))
+            .build();
         assert_eq!(1, config.pool_size());
         assert_eq!(2, config.helper_threads());
         assert_eq!(false, config.test_on_check_out());

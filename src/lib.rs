@@ -278,10 +278,10 @@ impl<M> fmt::Debug for Pool<M>
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.debug_struct("Pool")
-           .field("state", &self.state())
-           .field("config", self.config())
-           .field("manager", &self.0.manager)
-           .finish()
+            .field("state", &self.state())
+            .field("config", self.config())
+            .field("manager", &self.0.manager)
+            .finish()
     }
 }
 
@@ -338,15 +338,15 @@ impl<M> Pool<M>
                     return Err(InitializationError(internals.last_error.take()));
                 }
                 internals = shared.cond
-                                  .wait_timeout(internals, end - now)
-                                  .0;
+                    .wait_timeout(internals, end - now)
+                    .0;
             }
         }
 
         if shared.config.max_lifetime().is_some() || shared.config.idle_timeout().is_some() {
             let s = Arc::downgrade(&shared);
             shared.thread_pool
-                  .run_at_fixed_rate(reaper_rate, move || reap_connections(&s));
+                .run_at_fixed_rate(reaper_rate, move || reap_connections(&s));
         }
 
         Ok(Pool(shared))
@@ -405,9 +405,9 @@ impl<M> Pool<M>
                         return Err(GetTimeout(internals.last_error.take()));
                     };
                     internals = self.0
-                                    .cond
-                                    .wait_timeout(internals, end - now)
-                                    .0;
+                        .cond
+                        .wait_timeout(internals, end - now)
+                        .0;
                 }
             }
         }
