@@ -452,7 +452,7 @@ impl fmt::Display for InitializationError {
 
 impl Error for InitializationError {
     fn description(&self) -> &str {
-        "Unable to initialize connections"
+        "unable to initialize connections"
     }
 }
 
@@ -472,7 +472,7 @@ impl fmt::Display for GetTimeout {
 
 impl Error for GetTimeout {
     fn description(&self) -> &str {
-        "Timed out while waiting for a connection"
+        "timed out while waiting for a connection"
     }
 }
 
