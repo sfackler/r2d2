@@ -161,11 +161,8 @@ impl Worker {
     }
 
     fn run(&mut self) {
-        loop {
-            match self.get_job() {
-                Some(job) => self.run_job(job),
-                None => break,
-            }
+        while let Some(job) = self.get_job() {
+            self.run_job(job);
         }
     }
 
