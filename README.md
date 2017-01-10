@@ -26,6 +26,7 @@ Backend                                                             | Adaptor Cr
 [rusqlite](https://github.com/jgallagher/rusqlite)                  | [r2d2-sqlite](https://github.com/ivanceras/r2d2-sqlite)
 [rusted-cypher](https://github.com/livioribeiro/rusted-cypher)      | [r2d2-cypher](https://github.com/flosse/r2d2-cypher)
 [diesel](https://github.com/sgrif/diesel)                           | [r2d2-diesel](https://github.com/sgrif/r2d2-diesel)
+[couchdb](https://github.com/chill-rs/chill)                        | [r2d2-couchdb](https://github.com/scorphus/r2d2-couchdb)
 
 # Example
 
