@@ -373,49 +373,58 @@ impl<M> Pool<M>
     /// error.
     pub fn get(&self) -> Result<PooledConnection<M>, GetTimeout> {
         let end = Instant::now() + self.0.config.connection_timeout();
-        let mut internals = self.0.internals.lock();
 
-        let connection;
         loop {
-            match internals.conns.pop_front() {
-                Some(mut conn) => {
-                    drop(internals);
-
-                    if self.0.config.test_on_check_out() {
-                        if let Err(e) = self.0.manager.is_valid(&mut conn.conn.conn) {
-                            let msg = e.to_string();
-                            self.0.config.error_handler().handle_error(e);
-                            internals = self.0.internals.lock();
-                            internals.last_error = Some(msg);
-                            drop_conn(&self.0, &mut internals);
-                            continue;
-                        }
-                    }
-
-                    connection = conn.conn;
-                    break;
+            if let Some(conn) = self.get_immediately() {
+                return Ok(conn);
+            } else {
+                let mut internals = self.0.internals.lock();
+                if internals.num_conns + internals.pending_conns < self.0.config.pool_size() {
+                    add_connection(&self.0, &mut internals);
                 }
-                None => {
-                    if internals.num_conns + internals.pending_conns < self.0.config.pool_size() {
-                        add_connection(&self.0, &mut internals);
-                    }
 
-                    let now = Instant::now();
-                    if now >= end {
-                        return Err(GetTimeout(internals.last_error.take()));
-                    };
-                    internals = self.0
-                        .cond
-                        .wait_timeout(internals, end - now)
-                        .0;
-                }
+                let now = Instant::now();
+                if now >= end {
+                    return Err(GetTimeout(internals.last_error.take()));
+                };
+                self.0
+                    .cond
+                    .wait_timeout(internals, end - now);
             }
         }
+    }
 
-        Ok(PooledConnection {
-            pool: self.clone(),
-            conn: Some(connection),
-        })
+    /// Attempts to retreive a connection from the pool if there is one
+    /// available.
+    ///
+    /// Returns `None` if there are no idle connections available in the pool.
+    /// This method will not attempt to establish a new connection.
+    fn get_immediately(&self) -> Option<PooledConnection<M>> {
+        let mut internals = self.0.internals.lock();
+
+        loop {
+            if let Some(mut conn) = internals.conns.pop_front() {
+                drop(internals);
+
+                if self.0.config.test_on_check_out() {
+                    if let Err(e) = self.0.manager.is_valid(&mut conn.conn.conn) {
+                        let msg = e.to_string();
+                        self.0.config.error_handler().handle_error(e);
+                        internals = self.0.internals.lock();
+                        internals.last_error = Some(msg);
+                        drop_conn(&self.0, &mut internals);
+                        continue;
+                    }
+                }
+
+                return Some(PooledConnection {
+                    pool: self.clone(),
+                    conn: Some(conn.conn),
+                });
+            } else {
+                return None
+            }
+        }
     }
 
     fn put_back(&self, mut conn: Conn<M::Connection>) {
