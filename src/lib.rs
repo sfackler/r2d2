@@ -375,7 +375,7 @@ impl<M> Pool<M>
         let end = Instant::now() + self.0.config.connection_timeout();
 
         loop {
-            if let Some(conn) = self.get_immediately() {
+            if let Some(conn) = self.try_get() {
                 return Ok(conn);
             } else {
                 let mut internals = self.0.internals.lock();
@@ -399,7 +399,7 @@ impl<M> Pool<M>
     ///
     /// Returns `None` if there are no idle connections available in the pool.
     /// This method will not attempt to establish a new connection.
-    fn get_immediately(&self) -> Option<PooledConnection<M>> {
+    fn try_get(&self) -> Option<PooledConnection<M>> {
         let mut internals = self.0.internals.lock();
 
         loop {
