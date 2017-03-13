@@ -99,6 +99,24 @@ fn test_acquire_release() {
 }
 
 #[test]
+fn try_get() {
+    let config = Config::builder().pool_size(2).build();
+    let pool = Pool::new(config, OkManager).unwrap();
+
+    let conn1 = pool.try_get();
+    let conn2 = pool.try_get();
+    let conn3 = pool.try_get();
+
+    assert!(conn1.is_some());
+    assert!(conn2.is_some());
+    assert!(conn3.is_none());
+
+    drop(conn1);
+
+    assert!(pool.try_get().is_some());
+}
+
+#[test]
 fn test_is_send_sync() {
     fn is_send_sync<T: Send + Sync>() {}
     is_send_sync::<Pool<OkManager>>();
