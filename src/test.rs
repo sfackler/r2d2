@@ -4,9 +4,7 @@ use std::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, AtomicUsize, ATOMIC_USIZE_
 use std::sync::mpsc::{self, SyncSender, Receiver};
 use std::sync::Arc;
 use std::time::Duration;
-use std::thread;
-use std::fmt;
-use std::error;
+use std::{mem, thread, fmt, error};
 
 use {ManageConnection, CustomizeConnection, Pool, Config};
 
@@ -407,8 +405,6 @@ fn test_max_lifetime() {
 
 #[test]
 fn min_idle() {
-    static CREATED: AtomicUsize = ATOMIC_USIZE_INIT;
-
     struct Connection;
 
     struct Handler;
@@ -418,7 +414,6 @@ fn min_idle() {
         type Error = Error;
 
         fn connect(&self) -> Result<Connection, Error> {
-            CREATED.fetch_add(1, Ordering::SeqCst);
             Ok(Connection)
         }
 
@@ -436,9 +431,16 @@ fn min_idle() {
         .min_idle(Some(2))
         .build();
     let pool = Pool::new(config, Handler).unwrap();
-    assert_eq!(2, CREATED.load(Ordering::SeqCst));
-    let _conns = (0..5).map(|_| pool.get().unwrap()).collect::<Vec<_>>();
-    assert_eq!(5, CREATED.load(Ordering::SeqCst));
+    thread::sleep(Duration::from_secs(1));
+    assert_eq!(2, pool.state().idle_connections);
+    assert_eq!(2, pool.state().connections);
+    let conns = (0..3).map(|_| pool.get().unwrap()).collect::<Vec<_>>();
+    thread::sleep(Duration::from_secs(1));
+    assert_eq!(2, pool.state().idle_connections);
+    assert_eq!(5, pool.state().connections);
+    mem::drop(conns);
+    assert_eq!(5, pool.state().idle_connections);
+    assert_eq!(5, pool.state().connections);
 }
 
 #[test]
