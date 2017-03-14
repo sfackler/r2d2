@@ -175,8 +175,15 @@ fn drop_conn<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<M::Co
 {
     internals.num_conns -= 1;
 
+    establish_idle_connections(shared, internals);
+}
+
+fn establish_idle_connections<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<M::Connection>)
+    where M: ManageConnection
+{
     let min = shared.config.min_idle().unwrap_or(shared.config.pool_size());
-    if internals.num_conns + internals.pending_conns < min {
+    let idle = internals.conns.len() as u32;
+    for _ in idle..min {
         add_connection(shared, internals);
     }
 }
@@ -184,6 +191,10 @@ fn drop_conn<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<M::Co
 fn add_connection<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<M::Connection>)
     where M: ManageConnection
 {
+    if internals.num_conns + internals.pending_conns >= shared.config.pool_size() {
+        return;
+    }
+
     internals.pending_conns += 1;
     inner(Duration::from_secs(0), shared);
 
@@ -320,13 +331,7 @@ impl<M> Pool<M>
         });
 
         let initial_size = shared.config.min_idle().unwrap_or(shared.config.pool_size());
-        {
-            let mut inner = shared.internals.lock();
-            for _ in 0..initial_size {
-                add_connection(&shared, &mut inner);
-            }
-            drop(inner);
-        }
+        establish_idle_connections(&shared, &mut shared.internals.lock());
 
         if shared.config.initialization_fail_fast() {
             let end = Instant::now() + shared.config.connection_timeout();
@@ -404,6 +409,7 @@ impl<M> Pool<M>
 
         loop {
             if let Some(mut conn) = internals.conns.pop_front() {
+                establish_idle_connections(&self.0, &mut internals);
                 drop(internals);
 
                 if self.0.config.test_on_check_out() {
