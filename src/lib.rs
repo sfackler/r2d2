@@ -41,10 +41,12 @@
 #![doc(html_root_url="https://sfackler.github.io/r2d2/doc/v0.7.1")]
 
 extern crate antidote;
+extern crate scheduled_thread_pool;
 #[macro_use]
 extern crate log;
 
 use antidote::{Mutex, Condvar};
+use scheduled_thread_pool::ScheduledThreadPool;
 use std::cmp;
 use std::collections::VecDeque;
 use std::error::Error;
@@ -57,11 +59,7 @@ use std::time::{Duration, Instant};
 #[doc(inline)]
 pub use config::Config;
 
-use task::ScheduledThreadPool;
-
 pub mod config;
-mod task;
-mod thunk;
 
 #[cfg(test)]
 mod test;
@@ -178,10 +176,14 @@ fn drop_conn<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<M::Co
     establish_idle_connections(shared, internals);
 }
 
-fn establish_idle_connections<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<M::Connection>)
+fn establish_idle_connections<M>(shared: &Arc<SharedPool<M>>,
+                                 internals: &mut PoolInternals<M::Connection>)
     where M: ManageConnection
 {
-    let min = shared.config.min_idle().unwrap_or(shared.config.pool_size());
+    let min = shared
+        .config
+        .min_idle()
+        .unwrap_or(shared.config.pool_size());
     let idle = internals.conns.len() as u32;
     for _ in idle..min {
         add_connection(shared, internals);
@@ -202,41 +204,50 @@ fn add_connection<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<
         where M: ManageConnection
     {
         let new_shared = Arc::downgrade(shared);
-        shared.thread_pool.run_after(delay, move || {
-            let shared = match new_shared.upgrade() {
-                Some(shared) => shared,
-                None => return,
-            };
+        shared
+            .thread_pool
+            .execute_after(delay, move || {
+                let shared = match new_shared.upgrade() {
+                    Some(shared) => shared,
+                    None => return,
+                };
 
-            let conn = shared.manager.connect().and_then(|mut conn| {
-                shared.config.connection_customizer().on_acquire(&mut conn).map(|_| conn)
+                let conn = shared
+                    .manager
+                    .connect()
+                    .and_then(|mut conn| {
+                                  shared
+                                      .config
+                                      .connection_customizer()
+                                      .on_acquire(&mut conn)
+                                      .map(|_| conn)
+                              });
+                match conn {
+                    Ok(conn) => {
+                        let mut internals = shared.internals.lock();
+                        internals.last_error = None;
+                        let now = Instant::now();
+                        let conn = IdleConn {
+                            conn: Conn {
+                                conn: conn,
+                                birth: now,
+                            },
+                            idle_start: now,
+                        };
+                        internals.conns.push_back(conn);
+                        internals.pending_conns -= 1;
+                        internals.num_conns += 1;
+                        shared.cond.notify_one();
+                    }
+                    Err(err) => {
+                        shared.internals.lock().last_error = Some(err.to_string());
+                        shared.config.error_handler().handle_error(err);
+                        let delay = cmp::max(Duration::from_millis(200), delay);
+                        let delay = cmp::min(shared.config.connection_timeout() / 2, delay * 2);
+                        inner(delay, &shared);
+                    }
+                }
             });
-            match conn {
-                Ok(conn) => {
-                    let mut internals = shared.internals.lock();
-                    internals.last_error = None;
-                    let now = Instant::now();
-                    let conn = IdleConn {
-                        conn: Conn {
-                            conn: conn,
-                            birth: now,
-                        },
-                        idle_start: now,
-                    };
-                    internals.conns.push_back(conn);
-                    internals.pending_conns -= 1;
-                    internals.num_conns += 1;
-                    shared.cond.notify_one();
-                }
-                Err(err) => {
-                    shared.internals.lock().last_error = Some(err.to_string());
-                    shared.config.error_handler().handle_error(err);
-                    let delay = cmp::max(Duration::from_millis(200), delay);
-                    let delay = cmp::min(shared.config.connection_timeout() / 2, delay * 2);
-                    inner(delay, &shared);
-                }
-            }
-        });
     }
 }
 
@@ -323,14 +334,20 @@ impl<M> Pool<M>
         };
 
         let shared = Arc::new(SharedPool {
-            thread_pool: ScheduledThreadPool::new(config.helper_threads() as usize),
-            config: config,
-            manager: manager,
-            internals: Mutex::new(internals),
-            cond: Condvar::new(),
-        });
+                                  thread_pool:
+                                      ScheduledThreadPool::with_name("r2d2-worker-{}",
+                                                                     config.helper_threads() as
+                                                                     usize),
+                                  config: config,
+                                  manager: manager,
+                                  internals: Mutex::new(internals),
+                                  cond: Condvar::new(),
+                              });
 
-        let initial_size = shared.config.min_idle().unwrap_or(shared.config.pool_size());
+        let initial_size = shared
+            .config
+            .min_idle()
+            .unwrap_or(shared.config.pool_size());
         establish_idle_connections(&shared, &mut shared.internals.lock());
 
         if shared.config.initialization_fail_fast() {
@@ -342,16 +359,15 @@ impl<M> Pool<M>
                 if now >= end {
                     return Err(InitializationError(internals.last_error.take()));
                 }
-                internals = shared.cond
-                    .wait_timeout(internals, end - now)
-                    .0;
+                internals = shared.cond.wait_timeout(internals, end - now).0;
             }
         }
 
         if shared.config.max_lifetime().is_some() || shared.config.idle_timeout().is_some() {
             let s = Arc::downgrade(&shared);
-            shared.thread_pool
-                .run_at_fixed_rate(reaper_rate, move || reap_connections(&s));
+            shared
+                .thread_pool
+                .execute_at_fixed_rate(reaper_rate, reaper_rate, move || reap_connections(&s));
         }
 
         Ok(Pool(shared))
@@ -392,9 +408,7 @@ impl<M> Pool<M>
                 if now >= end {
                     return Err(GetTimeout(internals.last_error.take()));
                 };
-                self.0
-                    .cond
-                    .wait_timeout(internals, end - now);
+                self.0.cond.wait_timeout(internals, end - now);
             }
         }
     }
@@ -424,11 +438,11 @@ impl<M> Pool<M>
                 }
 
                 return Some(PooledConnection {
-                    pool: self.clone(),
-                    conn: Some(conn.conn),
-                });
+                                pool: self.clone(),
+                                conn: Some(conn.conn),
+                            });
             } else {
-                return None
+                return None;
             }
         }
     }
