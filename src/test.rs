@@ -250,6 +250,9 @@ fn test_get_timeout() {
 
 #[test]
 fn test_connection_customizer() {
+    static RELEASED: AtomicBool = ATOMIC_BOOL_INIT;
+    RELEASED.store(false, Ordering::SeqCst);
+
     static DROPPED: AtomicBool = ATOMIC_BOOL_INIT;
     DROPPED.store(false, Ordering::SeqCst);
 
@@ -292,6 +295,10 @@ fn test_connection_customizer() {
                 Ok(())
             }
         }
+
+        fn on_release(&self, _: Connection) {
+            RELEASED.store(true, Ordering::SeqCst);
+        }
     }
 
     let config = Config::builder()
@@ -299,9 +306,14 @@ fn test_connection_customizer() {
         .build();
     let pool = Pool::new(config, Handler).unwrap();
 
-    let conn = pool.get().unwrap();
-    assert_eq!(1, conn.0);
-    assert!(DROPPED.load(Ordering::SeqCst));
+    {
+        let conn = pool.get().unwrap();
+        assert_eq!(1, conn.0);
+        assert!(!RELEASED.load(Ordering::SeqCst));
+        assert!(DROPPED.load(Ordering::SeqCst));
+    }
+    assert!(RELEASED.load(Ordering::SeqCst));
+
 }
 
 #[test]
