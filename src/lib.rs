@@ -45,7 +45,7 @@ extern crate scheduled_thread_pool;
 #[macro_use]
 extern crate log;
 
-use antidote::{Mutex, Condvar};
+use antidote::{Mutex, MutexGuard, Condvar};
 use scheduled_thread_pool::ScheduledThreadPool;
 use std::cmp;
 use std::collections::VecDeque;
@@ -133,6 +133,12 @@ pub trait CustomizeConnection<C, E>: fmt::Debug + Send + Sync + 'static {
     fn on_acquire(&self, conn: &mut C) -> Result<(), E> {
         Ok(())
     }
+
+    /// Called with connections removed from the pool
+    ///
+    /// The default implementation does nothing
+    #[allow(unused_variables)]
+    fn on_release(&self, conn: C) {}
 }
 
 /// A `CustomizeConnection` which does nothing.
@@ -168,12 +174,21 @@ struct SharedPool<M>
     thread_pool: ScheduledThreadPool,
 }
 
-fn drop_conn<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<M::Connection>)
+fn drop_conns<M>(shared: &Arc<SharedPool<M>>, mut internals: MutexGuard<PoolInternals<M::Connection>>, conns: Vec<M::Connection>)
     where M: ManageConnection
 {
-    internals.num_conns -= 1;
+    internals.num_conns -= conns.len() as u32;
+    for _ in 0..conns.len() {
+        establish_idle_connections(shared, &mut internals);
+    }
+    drop(internals); // make sure we run connection destructors without this locked
 
-    establish_idle_connections(shared, internals);
+    for conn in conns {
+        shared
+            .config
+            .connection_customizer()
+            .on_release(conn);
+    }
 }
 
 fn establish_idle_connections<M>(shared: &Arc<SharedPool<M>>,
@@ -274,13 +289,12 @@ fn reap_connections<M>(shared: &Weak<SharedPool<M>>)
             reap |= now - conn.conn.birth >= lifetime;
         }
         if reap {
-            drop_conn(&shared, &mut internals);
             to_drop.push(conn.conn.conn);
         } else {
             internals.conns.push_back(conn);
         }
     }
-    drop(internals); // make sure we run to_drop destructors without this locked
+    drop_conns(&shared, internals, to_drop);
 }
 
 /// A generic connection pool.
@@ -419,9 +433,8 @@ impl<M> Pool<M>
     /// Returns `None` if there are no idle connections available in the pool.
     /// This method will not attempt to establish a new connection.
     fn try_get(&self) -> Option<PooledConnection<M>> {
-        let mut internals = self.0.internals.lock();
-
         loop {
+            let mut internals = self.0.internals.lock();
             if let Some(mut conn) = internals.conns.pop_front() {
                 establish_idle_connections(&self.0, &mut internals);
                 drop(internals);
@@ -432,7 +445,7 @@ impl<M> Pool<M>
                         self.0.config.error_handler().handle_error(e);
                         internals = self.0.internals.lock();
                         internals.last_error = Some(msg);
-                        drop_conn(&self.0, &mut internals);
+                        drop_conns(&self.0, internals, vec![conn.conn.conn]);
                         continue;
                     }
                 }
@@ -453,7 +466,7 @@ impl<M> Pool<M>
 
         let mut internals = self.0.internals.lock();
         if broken {
-            drop_conn(&self.0, &mut internals);
+            drop_conns(&self.0, internals, vec![conn.conn]);
         } else {
             let conn = IdleConn {
                 conn: conn,
