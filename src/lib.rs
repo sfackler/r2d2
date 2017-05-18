@@ -134,9 +134,12 @@ pub trait CustomizeConnection<C, E>: fmt::Debug + Send + Sync + 'static {
         Ok(())
     }
 
-    /// Called with connections removed from the pool
+    /// Called with connections when they are removed from the pool.
     ///
-    /// The default implementation does nothing
+    /// The connections may be broken (as reported by `is_valid` or
+    /// `has_broken`), or have simply timed out.
+    ///
+    /// The default implementation does nothing.
     #[allow(unused_variables)]
     fn on_release(&self, conn: C) {}
 }
@@ -174,7 +177,9 @@ struct SharedPool<M>
     thread_pool: ScheduledThreadPool,
 }
 
-fn drop_conns<M>(shared: &Arc<SharedPool<M>>, mut internals: MutexGuard<PoolInternals<M::Connection>>, conns: Vec<M::Connection>)
+fn drop_conns<M>(shared: &Arc<SharedPool<M>>,
+                 mut internals: MutexGuard<PoolInternals<M::Connection>>,
+                 conns: Vec<M::Connection>)
     where M: ManageConnection
 {
     internals.num_conns -= conns.len() as u32;
@@ -184,10 +189,7 @@ fn drop_conns<M>(shared: &Arc<SharedPool<M>>, mut internals: MutexGuard<PoolInte
     drop(internals); // make sure we run connection destructors without this locked
 
     for conn in conns {
-        shared
-            .config
-            .connection_customizer()
-            .on_release(conn);
+        shared.config.connection_customizer().on_release(conn);
     }
 }
 
