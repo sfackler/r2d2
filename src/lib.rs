@@ -410,22 +410,23 @@ impl<M> Pool<M>
     /// error.
     pub fn get(&self) -> Result<PooledConnection<M>, GetTimeout> {
         let end = Instant::now() + self.0.config.connection_timeout();
+        let mut internals = self.0.internals.lock();
 
         loop {
-            if let Some(conn) = self.try_get() {
-                return Ok(conn);
-            } else {
-                let mut internals = self.0.internals.lock();
-                if internals.num_conns + internals.pending_conns < self.0.config.pool_size() {
-                    add_connection(&self.0, &mut internals);
-                }
-
-                let now = Instant::now();
-                if now >= end {
-                    return Err(GetTimeout(internals.last_error.take()));
-                };
-                self.0.cond.wait_timeout(internals, end - now);
+            match self.try_get_inner(internals) {
+                Ok(conn) => return Ok(conn),
+                Err(i) => internals = i,
             }
+
+            if internals.num_conns + internals.pending_conns < self.0.config.pool_size() {
+                add_connection(&self.0, &mut internals);
+            }
+
+            let now = Instant::now();
+            if now >= end {
+                return Err(GetTimeout(internals.last_error.take()));
+            }
+            internals = self.0.cond.wait_timeout(internals, end - now).0;
         }
     }
 
@@ -433,10 +434,16 @@ impl<M> Pool<M>
     /// available.
     ///
     /// Returns `None` if there are no idle connections available in the pool.
-    /// This method will not attempt to establish a new connection.
-    fn try_get(&self) -> Option<PooledConnection<M>> {
+    /// This method will not block waiting to establish a new connection.
+    pub fn try_get(&self) -> Option<PooledConnection<M>> {
+        self.try_get_inner(self.0.internals.lock()).ok()
+    }
+
+    fn try_get_inner<'a>
+        (&'a self,
+         mut internals: MutexGuard<'a, PoolInternals<M::Connection>>)
+         -> Result<PooledConnection<M>, MutexGuard<'a, PoolInternals<M::Connection>>> {
         loop {
-            let mut internals = self.0.internals.lock();
             if let Some(mut conn) = internals.conns.pop_front() {
                 establish_idle_connections(&self.0, &mut internals);
                 drop(internals);
@@ -445,19 +452,21 @@ impl<M> Pool<M>
                     if let Err(e) = self.0.manager.is_valid(&mut conn.conn.conn) {
                         let msg = e.to_string();
                         self.0.config.error_handler().handle_error(e);
+                        // FIXME we shouldn't have to lock, unlock, and relock here
                         internals = self.0.internals.lock();
                         internals.last_error = Some(msg);
                         drop_conns(&self.0, internals, vec![conn.conn.conn]);
+                        internals = self.0.internals.lock();
                         continue;
                     }
                 }
 
-                return Some(PooledConnection {
-                                pool: self.clone(),
-                                conn: Some(conn.conn),
-                            });
+                return Ok(PooledConnection {
+                              pool: self.clone(),
+                              conn: Some(conn.conn),
+                          });
             } else {
-                return None;
+                return Err(internals);
             }
         }
     }
