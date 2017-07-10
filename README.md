@@ -1,9 +1,7 @@
-r2d2
-====
+# r2d2
+[![CircleCI](https://circleci.com/gh/sfackler/r2d2.svg?style=svg)](https://circleci.com/gh/sfackler/r2d2)
 
 A generic connection pool for Rust.
-
-[![Build Status](https://travis-ci.org/sfackler/r2d2.svg?branch=master)](https://travis-ci.org/sfackler/r2d2) [![Latest Version](https://img.shields.io/crates/v/r2d2.svg)](https://crates.io/crates/r2d2)
 
 [Documentation](https://docs.rs/r2d2)
 
