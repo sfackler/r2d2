@@ -38,7 +38,7 @@
 //! }
 //! ```
 #![warn(missing_docs)]
-#![doc(html_root_url="https://docs.rs/r2d2/0.7.2")]
+#![doc(html_root_url="https://docs.rs/r2d2/0.7.3")]
 
 extern crate antidote;
 extern crate scheduled_thread_pool;
