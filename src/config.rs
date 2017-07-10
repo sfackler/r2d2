@@ -68,8 +68,10 @@ impl<C, E: Error> Builder<C, E> {
     ///
     /// Panics if `max_lifetime` is the zero `Duration`.
     pub fn max_lifetime(mut self, max_lifetime: Option<Duration>) -> Builder<C, E> {
-        assert!(max_lifetime != Some(Duration::from_secs(0)),
-                "max_lifetime must be positive");
+        assert!(
+            max_lifetime != Some(Duration::from_secs(0)),
+            "max_lifetime must be positive"
+        );
         self.c.max_lifetime = max_lifetime;
         self
     }
@@ -80,8 +82,10 @@ impl<C, E: Error> Builder<C, E> {
     ///
     /// Panics if `idle_timeout` is the zero `Duration`.
     pub fn idle_timeout(mut self, idle_timeout: Option<Duration>) -> Builder<C, E> {
-        assert!(idle_timeout != Some(Duration::from_secs(0)),
-                "idle_timeout must be positive");
+        assert!(
+            idle_timeout != Some(Duration::from_secs(0)),
+            "idle_timeout must be positive"
+        );
         self.c.idle_timeout = idle_timeout;
         self
     }
@@ -92,8 +96,10 @@ impl<C, E: Error> Builder<C, E> {
     ///
     /// Panics if `connection_timeout` is the zero duration
     pub fn connection_timeout(mut self, connection_timeout: Duration) -> Builder<C, E> {
-        assert!(connection_timeout > Duration::from_secs(0),
-                "connection_timeout must be positive");
+        assert!(
+            connection_timeout > Duration::from_secs(0),
+            "connection_timeout must be positive"
+        );
         self.c.connection_timeout = connection_timeout;
         self
     }
@@ -105,9 +111,10 @@ impl<C, E: Error> Builder<C, E> {
     }
 
     /// Sets the `connection_customizer`.
-    pub fn connection_customizer(mut self,
-                                 connection_customizer: Box<CustomizeConnection<C, E>>)
-                                 -> Builder<C, E> {
+    pub fn connection_customizer(
+        mut self,
+        connection_customizer: Box<CustomizeConnection<C, E>>,
+    ) -> Builder<C, E> {
         self.c.connection_customizer = connection_customizer;
         self
     }
@@ -119,8 +126,10 @@ impl<C, E: Error> Builder<C, E> {
     /// Panics if `min_idle` is larger than `pool_size`.
     pub fn build(self) -> Config<C, E> {
         if let Some(min_idle) = self.c.min_idle {
-            assert!(self.c.pool_size >= min_idle,
-                    "min_idle must be no larger than pool_size");
+            assert!(
+                self.c.pool_size >= min_idle,
+                "min_idle must be no larger than pool_size"
+            );
         }
 
         self.c
@@ -323,6 +332,9 @@ mod test {
     #[test]
     #[should_panic(expected = "min_idle must be no larger than pool_size")]
     fn builder_too_many_num_idle() {
-        Config::<(), Error>::builder().pool_size(1).min_idle(Some(2)).build();
+        Config::<(), Error>::builder()
+            .pool_size(1)
+            .min_idle(Some(2))
+            .build();
     }
 }

@@ -164,9 +164,7 @@ fn test_issue_2_unlocked_during_is_valid() {
     let pool = Arc::new(Pool::new(config, manager).unwrap());
 
     let p2 = pool.clone();
-    let t = thread::spawn(move || {
-        p2.get().ok().unwrap();
-    });
+    let t = thread::spawn(move || { p2.get().ok().unwrap(); });
 
     r1.recv().unwrap();
     // get call by other task has triggered the health check
@@ -438,10 +436,7 @@ fn min_idle() {
         }
     }
 
-    let config = Config::builder()
-        .pool_size(5)
-        .min_idle(Some(2))
-        .build();
+    let config = Config::builder().pool_size(5).min_idle(Some(2)).build();
     let pool = Pool::new(config, Handler).unwrap();
     thread::sleep(Duration::from_secs(1));
     assert_eq!(2, pool.state().idle_connections);

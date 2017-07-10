@@ -112,7 +112,8 @@ impl<E> HandleError<E> for NopErrorHandler {
 pub struct LoggingErrorHandler;
 
 impl<E> HandleError<E> for LoggingErrorHandler
-    where E: Error
+where
+    E: Error,
 {
     fn handle_error(&self, error: E) {
         error!("{}", error);
@@ -168,7 +169,8 @@ struct PoolInternals<C> {
 }
 
 struct SharedPool<M>
-    where M: ManageConnection
+where
+    M: ManageConnection,
 {
     config: Config<M::Connection, M::Error>,
     manager: M,
@@ -177,10 +179,12 @@ struct SharedPool<M>
     thread_pool: ScheduledThreadPool,
 }
 
-fn drop_conns<M>(shared: &Arc<SharedPool<M>>,
-                 mut internals: MutexGuard<PoolInternals<M::Connection>>,
-                 conns: Vec<M::Connection>)
-    where M: ManageConnection
+fn drop_conns<M>(
+    shared: &Arc<SharedPool<M>>,
+    mut internals: MutexGuard<PoolInternals<M::Connection>>,
+    conns: Vec<M::Connection>,
+) where
+    M: ManageConnection,
 {
     internals.num_conns -= conns.len() as u32;
     for _ in 0..conns.len() {
@@ -193,14 +197,15 @@ fn drop_conns<M>(shared: &Arc<SharedPool<M>>,
     }
 }
 
-fn establish_idle_connections<M>(shared: &Arc<SharedPool<M>>,
-                                 internals: &mut PoolInternals<M::Connection>)
-    where M: ManageConnection
+fn establish_idle_connections<M>(
+    shared: &Arc<SharedPool<M>>,
+    internals: &mut PoolInternals<M::Connection>,
+) where
+    M: ManageConnection,
 {
-    let min = shared
-        .config
-        .min_idle()
-        .unwrap_or(shared.config.pool_size());
+    let min = shared.config.min_idle().unwrap_or(
+        shared.config.pool_size(),
+    );
     let idle = internals.conns.len() as u32;
     for _ in idle..min {
         add_connection(shared, internals);
@@ -208,7 +213,8 @@ fn establish_idle_connections<M>(shared: &Arc<SharedPool<M>>,
 }
 
 fn add_connection<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<M::Connection>)
-    where M: ManageConnection
+where
+    M: ManageConnection,
 {
     if internals.num_conns + internals.pending_conns >= shared.config.pool_size() {
         return;
@@ -218,58 +224,55 @@ fn add_connection<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<
     inner(Duration::from_secs(0), shared);
 
     fn inner<M>(delay: Duration, shared: &Arc<SharedPool<M>>)
-        where M: ManageConnection
+    where
+        M: ManageConnection,
     {
         let new_shared = Arc::downgrade(shared);
-        shared
-            .thread_pool
-            .execute_after(delay, move || {
-                let shared = match new_shared.upgrade() {
-                    Some(shared) => shared,
-                    None => return,
-                };
+        shared.thread_pool.execute_after(delay, move || {
+            let shared = match new_shared.upgrade() {
+                Some(shared) => shared,
+                None => return,
+            };
 
-                let conn = shared
-                    .manager
-                    .connect()
-                    .and_then(|mut conn| {
-                                  shared
-                                      .config
-                                      .connection_customizer()
-                                      .on_acquire(&mut conn)
-                                      .map(|_| conn)
-                              });
-                match conn {
-                    Ok(conn) => {
-                        let mut internals = shared.internals.lock();
-                        internals.last_error = None;
-                        let now = Instant::now();
-                        let conn = IdleConn {
-                            conn: Conn {
-                                conn: conn,
-                                birth: now,
-                            },
-                            idle_start: now,
-                        };
-                        internals.conns.push_back(conn);
-                        internals.pending_conns -= 1;
-                        internals.num_conns += 1;
-                        shared.cond.notify_one();
-                    }
-                    Err(err) => {
-                        shared.internals.lock().last_error = Some(err.to_string());
-                        shared.config.error_handler().handle_error(err);
-                        let delay = cmp::max(Duration::from_millis(200), delay);
-                        let delay = cmp::min(shared.config.connection_timeout() / 2, delay * 2);
-                        inner(delay, &shared);
-                    }
-                }
+            let conn = shared.manager.connect().and_then(|mut conn| {
+                shared
+                    .config
+                    .connection_customizer()
+                    .on_acquire(&mut conn)
+                    .map(|_| conn)
             });
+            match conn {
+                Ok(conn) => {
+                    let mut internals = shared.internals.lock();
+                    internals.last_error = None;
+                    let now = Instant::now();
+                    let conn = IdleConn {
+                        conn: Conn {
+                            conn: conn,
+                            birth: now,
+                        },
+                        idle_start: now,
+                    };
+                    internals.conns.push_back(conn);
+                    internals.pending_conns -= 1;
+                    internals.num_conns += 1;
+                    shared.cond.notify_one();
+                }
+                Err(err) => {
+                    shared.internals.lock().last_error = Some(err.to_string());
+                    shared.config.error_handler().handle_error(err);
+                    let delay = cmp::max(Duration::from_millis(200), delay);
+                    let delay = cmp::min(shared.config.connection_timeout() / 2, delay * 2);
+                    inner(delay, &shared);
+                }
+            }
+        });
     }
 }
 
 fn reap_connections<M>(shared: &Weak<SharedPool<M>>)
-    where M: ManageConnection
+where
+    M: ManageConnection,
 {
     let shared = match shared.upgrade() {
         Some(shared) => shared,
@@ -304,7 +307,8 @@ pub struct Pool<M: ManageConnection>(Arc<SharedPool<M>>);
 
 /// Returns a new `Pool` referencing the same state as `self`.
 impl<M> Clone for Pool<M>
-    where M: ManageConnection
+where
+    M: ManageConnection,
 {
     fn clone(&self) -> Pool<M> {
         Pool(self.0.clone())
@@ -312,7 +316,8 @@ impl<M> Clone for Pool<M>
 }
 
 impl<M> fmt::Debug for Pool<M>
-    where M: ManageConnection + fmt::Debug
+where
+    M: ManageConnection + fmt::Debug,
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.debug_struct("Pool")
@@ -324,24 +329,27 @@ impl<M> fmt::Debug for Pool<M>
 }
 
 impl<M> Pool<M>
-    where M: ManageConnection
+where
+    M: ManageConnection,
 {
     /// Creates a new connection pool.
     ///
     /// Returns an `Err` value if `initialization_fail_fast` is set to true in
     /// the configuration and the pool is unable to open all of its
     /// connections.
-    pub fn new(config: Config<M::Connection, M::Error>,
-               manager: M)
-               -> Result<Pool<M>, InitializationError> {
+    pub fn new(
+        config: Config<M::Connection, M::Error>,
+        manager: M,
+    ) -> Result<Pool<M>, InitializationError> {
         Pool::new_inner(config, manager, Duration::from_secs(30))
     }
 
     // for testing
-    fn new_inner(config: Config<M::Connection, M::Error>,
-                 manager: M,
-                 reaper_rate: Duration)
-                 -> Result<Pool<M>, InitializationError> {
+    fn new_inner(
+        config: Config<M::Connection, M::Error>,
+        manager: M,
+        reaper_rate: Duration,
+    ) -> Result<Pool<M>, InitializationError> {
         let internals = PoolInternals {
             conns: VecDeque::with_capacity(config.pool_size() as usize),
             num_conns: 0,
@@ -350,20 +358,19 @@ impl<M> Pool<M>
         };
 
         let shared = Arc::new(SharedPool {
-                                  thread_pool:
-                                      ScheduledThreadPool::with_name("r2d2-worker-{}",
-                                                                     config.helper_threads() as
-                                                                     usize),
-                                  config: config,
-                                  manager: manager,
-                                  internals: Mutex::new(internals),
-                                  cond: Condvar::new(),
-                              });
+            thread_pool: ScheduledThreadPool::with_name(
+                "r2d2-worker-{}",
+                config.helper_threads() as usize,
+            ),
+            config: config,
+            manager: manager,
+            internals: Mutex::new(internals),
+            cond: Condvar::new(),
+        });
 
-        let initial_size = shared
-            .config
-            .min_idle()
-            .unwrap_or(shared.config.pool_size());
+        let initial_size = shared.config.min_idle().unwrap_or(
+            shared.config.pool_size(),
+        );
         establish_idle_connections(&shared, &mut shared.internals.lock());
 
         if shared.config.initialization_fail_fast() {
@@ -381,9 +388,11 @@ impl<M> Pool<M>
 
         if shared.config.max_lifetime().is_some() || shared.config.idle_timeout().is_some() {
             let s = Arc::downgrade(&shared);
-            shared
-                .thread_pool
-                .execute_at_fixed_rate(reaper_rate, reaper_rate, move || reap_connections(&s));
+            shared.thread_pool.execute_at_fixed_rate(
+                reaper_rate,
+                reaper_rate,
+                move || reap_connections(&s),
+            );
         }
 
         Ok(Pool(shared))
@@ -439,10 +448,10 @@ impl<M> Pool<M>
         self.try_get_inner(self.0.internals.lock()).ok()
     }
 
-    fn try_get_inner<'a>
-        (&'a self,
-         mut internals: MutexGuard<'a, PoolInternals<M::Connection>>)
-         -> Result<PooledConnection<M>, MutexGuard<'a, PoolInternals<M::Connection>>> {
+    fn try_get_inner<'a>(
+        &'a self,
+        mut internals: MutexGuard<'a, PoolInternals<M::Connection>>,
+    ) -> Result<PooledConnection<M>, MutexGuard<'a, PoolInternals<M::Connection>>> {
         loop {
             if let Some(mut conn) = internals.conns.pop_front() {
                 establish_idle_connections(&self.0, &mut internals);
@@ -462,9 +471,9 @@ impl<M> Pool<M>
                 }
 
                 return Ok(PooledConnection {
-                              pool: self.clone(),
-                              conn: Some(conn.conn),
-                          });
+                    pool: self.clone(),
+                    conn: Some(conn.conn),
+                });
             } else {
                 return Err(internals);
             }
@@ -549,15 +558,17 @@ impl fmt::Debug for State {
 
 /// A smart pointer wrapping a connection.
 pub struct PooledConnection<M>
-    where M: ManageConnection
+where
+    M: ManageConnection,
 {
     pool: Pool<M>,
     conn: Option<Conn<M::Connection>>,
 }
 
 impl<M> fmt::Debug for PooledConnection<M>
-    where M: ManageConnection,
-          M::Connection: fmt::Debug
+where
+    M: ManageConnection,
+    M::Connection: fmt::Debug,
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self.conn.as_ref().unwrap().conn, fmt)
@@ -565,7 +576,8 @@ impl<M> fmt::Debug for PooledConnection<M>
 }
 
 impl<M> Drop for PooledConnection<M>
-    where M: ManageConnection
+where
+    M: ManageConnection,
 {
     fn drop(&mut self) {
         self.pool.put_back(self.conn.take().unwrap());
@@ -573,7 +585,8 @@ impl<M> Drop for PooledConnection<M>
 }
 
 impl<M> Deref for PooledConnection<M>
-    where M: ManageConnection
+where
+    M: ManageConnection,
 {
     type Target = M::Connection;
 
@@ -583,7 +596,8 @@ impl<M> Deref for PooledConnection<M>
 }
 
 impl<M> DerefMut for PooledConnection<M>
-    where M: ManageConnection
+where
+    M: ManageConnection,
 {
     fn deref_mut(&mut self) -> &mut M::Connection {
         &mut self.conn.as_mut().unwrap().conn
