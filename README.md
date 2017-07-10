@@ -1,5 +1,5 @@
 # r2d2
-[![CircleCI](https://circleci.com/gh/sfackler/r2d2.svg?style=sheild)](https://circleci.com/gh/sfackler/r2d2)
+[![CircleCI](https://circleci.com/gh/sfackler/r2d2.svg?style=shield)](https://circleci.com/gh/sfackler/r2d2)
 
 A generic connection pool for Rust.
 
