@@ -344,6 +344,28 @@ where
         Pool::new_inner(config, manager, Duration::from_secs(30))
     }
 
+    /// Creates a new connection pool for testing purposes.
+    ///
+    /// A test pool has always the size of 1, and the only contained connection
+    /// is provided on construction to help instrumenting it. This allows, for
+    /// example, setting up a connection with a transaction, setting up
+    /// the database for the test, running the testable code which uses the
+    /// pool like it normally would, and after the test has run, getting the
+    /// connection from the pool to examine the state the test left the
+    /// database in, allowing to roll back the transaction.
+    pub fn with_test_conn(
+        manager: M,
+        conn: M::Connection
+    ) -> Result<Pool<M>, InitializationError> {
+        let config = Config::builder()
+            .pool_size(1)
+            .min_idle(Some(0))
+            .build();
+        let conn = Conn { conn: conn, birth: Instant::now() };
+        let pool = Pool::new_inner(config, manager, Duration::from_secs(30))?;
+        pool.put_back(conn);
+        Ok(pool)
+    }
     // for testing
     fn new_inner(
         config: Config<M::Connection, M::Error>,
