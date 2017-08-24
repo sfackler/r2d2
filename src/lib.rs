@@ -439,7 +439,7 @@ where
         }
     }
 
-    /// Attempts to retreive a connection from the pool if there is one
+    /// Attempts to retrieve a connection from the pool if there is one
     /// available.
     ///
     /// Returns `None` if there are no idle connections available in the pool.
