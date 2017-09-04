@@ -2,6 +2,8 @@
 use std::fmt;
 use std::time::Duration;
 use std::error::Error;
+use std::sync::Arc;
+use scheduled_thread_pool::ScheduledThreadPool;
 
 use {HandleError, LoggingErrorHandler, CustomizeConnection, NopConnectionCustomizer};
 
@@ -119,6 +121,13 @@ impl<C, E: Error> Builder<C, E> {
         self
     }
 
+    /// Sets the `thread_pool`.
+    /// if `thread_pool` is some, then the `helper_threads` will be ignored
+    pub fn thread_pool(mut self, thread_pool: Option<Arc<ScheduledThreadPool>>) -> Builder<C, E> {
+        self.c.thread_pool = thread_pool;
+        self
+    }
+
     /// Consumes the `Builder`, turning it into a `Config`.
     ///
     /// # Panics
@@ -151,6 +160,7 @@ pub struct Config<C, E> {
     connection_timeout: Duration,
     error_handler: Box<HandleError<E>>,
     connection_customizer: Box<CustomizeConnection<C, E>>,
+    thread_pool: Option<Arc<ScheduledThreadPool>>,
 }
 
 // manual to avoid bounds on C and E
@@ -167,6 +177,7 @@ impl<C, E> fmt::Debug for Config<C, E> {
             .field("connection_timeout", &self.connection_timeout)
             .field("error_handler", &self.error_handler)
             .field("connection_customizer", &self.connection_customizer)
+            .field("thread_pool", &self.thread_pool.is_some())
             .finish()
     }
 }
@@ -184,6 +195,7 @@ impl<C, E: Error> Default for Config<C, E> {
             connection_timeout: Duration::from_secs(30),
             error_handler: Box::new(LoggingErrorHandler),
             connection_customizer: Box::new(NopConnectionCustomizer),
+            thread_pool: None,
         }
     }
 }
@@ -273,6 +285,13 @@ impl<C, E: Error> Config<C, E> {
     /// Defaults to `r2d2::NopConnectionCustomizer`.
     pub fn connection_customizer(&self) -> &CustomizeConnection<C, E> {
         &*self.connection_customizer
+    }
+
+    /// The thread_pool that could be shared between pools
+    ///
+    /// Defaults to None.
+    pub fn thread_pool(&self) -> &Option<Arc<ScheduledThreadPool>> {
+        &self.thread_pool
     }
 }
 

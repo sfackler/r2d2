@@ -176,7 +176,7 @@ where
     manager: M,
     internals: Mutex<PoolInternals<M::Connection>>,
     cond: Condvar,
-    thread_pool: ScheduledThreadPool,
+    thread_pool: Arc<ScheduledThreadPool>,
 }
 
 fn drop_conns<M>(
@@ -357,11 +357,16 @@ where
             last_error: None,
         };
 
-        let shared = Arc::new(SharedPool {
-            thread_pool: ScheduledThreadPool::with_name(
+        let thread_pool = match config.thread_pool() {
+            &Some(ref thread_pool) => thread_pool.clone(),
+            &None => Arc::new(ScheduledThreadPool::with_name(
                 "r2d2-worker-{}",
                 config.helper_threads() as usize,
-            ),
+            )),
+        };
+
+        let shared = Arc::new(SharedPool {
+            thread_pool: thread_pool,
             config: config,
             manager: manager,
             internals: Mutex::new(internals),
