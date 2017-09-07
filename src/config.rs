@@ -43,12 +43,20 @@ impl<C, E: Error> Builder<C, E> {
 
     /// Sets `helper_threads`.
     ///
+    /// Ignored if `thread_pool` is `Some`.
+    ///
     /// # Panics
     ///
     /// Panics if `helper_threads` is 0.
     pub fn helper_threads(mut self, helper_threads: u32) -> Builder<C, E> {
         assert!(helper_threads > 0, "helper_threads must be positive");
         self.c.helper_threads = helper_threads;
+        self
+    }
+
+    /// Sets the `thread_pool`.
+    pub fn thread_pool(mut self, thread_pool: Option<Arc<ScheduledThreadPool>>) -> Builder<C, E> {
+        self.c.thread_pool = thread_pool;
         self
     }
 
@@ -118,13 +126,6 @@ impl<C, E: Error> Builder<C, E> {
         connection_customizer: Box<CustomizeConnection<C, E>>,
     ) -> Builder<C, E> {
         self.c.connection_customizer = connection_customizer;
-        self
-    }
-
-    /// Sets the `thread_pool`.
-    /// if `thread_pool` is some, then the `helper_threads` will be ignored
-    pub fn thread_pool(mut self, thread_pool: Option<Arc<ScheduledThreadPool>>) -> Builder<C, E> {
-        self.c.thread_pool = thread_pool;
         self
     }
 
@@ -287,9 +288,10 @@ impl<C, E: Error> Config<C, E> {
         &*self.connection_customizer
     }
 
-    /// The thread_pool that could be shared between pools
+    /// The thread pool used by the pool. If not present, a new pool will be
+    /// created.
     ///
-    /// Defaults to None.
+    /// Defaults to `None`.
     pub fn thread_pool(&self) -> &Option<Arc<ScheduledThreadPool>> {
         &self.thread_pool
     }
