@@ -46,7 +46,6 @@ extern crate scheduled_thread_pool;
 extern crate log;
 
 use antidote::{Mutex, MutexGuard, Condvar};
-use scheduled_thread_pool::ScheduledThreadPool;
 use std::cmp;
 use std::collections::VecDeque;
 use std::error::Error;
@@ -176,7 +175,6 @@ where
     manager: M,
     internals: Mutex<PoolInternals<M::Connection>>,
     cond: Condvar,
-    thread_pool: Arc<ScheduledThreadPool>,
 }
 
 fn drop_conns<M>(
@@ -228,7 +226,7 @@ where
         M: ManageConnection,
     {
         let new_shared = Arc::downgrade(shared);
-        shared.thread_pool.execute_after(delay, move || {
+        shared.config.thread_pool().execute_after(delay, move || {
             let shared = match new_shared.upgrade() {
                 Some(shared) => shared,
                 None => return,
@@ -357,16 +355,7 @@ where
             last_error: None,
         };
 
-        let thread_pool = match config.thread_pool() {
-            &Some(ref thread_pool) => thread_pool.clone(),
-            &None => Arc::new(ScheduledThreadPool::with_name(
-                "r2d2-worker-{}",
-                config.helper_threads() as usize,
-            )),
-        };
-
         let shared = Arc::new(SharedPool {
-            thread_pool: thread_pool,
             config: config,
             manager: manager,
             internals: Mutex::new(internals),
@@ -393,7 +382,7 @@ where
 
         if shared.config.max_lifetime().is_some() || shared.config.idle_timeout().is_some() {
             let s = Arc::downgrade(&shared);
-            shared.thread_pool.execute_at_fixed_rate(
+            shared.config.thread_pool().execute_at_fixed_rate(
                 reaper_rate,
                 reaper_rate,
                 move || reap_connections(&s),

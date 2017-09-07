@@ -11,9 +11,36 @@ use {HandleError, LoggingErrorHandler, CustomizeConnection, NopConnectionCustomi
 ///
 /// See the documentation of `Config` for more details about the default value
 /// and meaning of the configuration parameters.
-#[derive(Debug)]
 pub struct Builder<C, E> {
-    c: Config<C, E>,
+    pool_size: u32,
+    min_idle: Option<u32>,
+    helper_threads: u32,
+    test_on_check_out: bool,
+    initialization_fail_fast: bool,
+    max_lifetime: Option<Duration>,
+    idle_timeout: Option<Duration>,
+    connection_timeout: Duration,
+    error_handler: Box<HandleError<E>>,
+    connection_customizer: Box<CustomizeConnection<C, E>>,
+    thread_pool: Option<Arc<ScheduledThreadPool>>,
+}
+
+// manual to avoid bounds on C and E
+impl<C, E> fmt::Debug for Builder<C, E> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.debug_struct("Builder")
+            .field("pool_size", &self.pool_size)
+            .field("min_idle", &self.min_idle)
+            .field("helper_threads", &self.helper_threads)
+            .field("test_on_check_out", &self.test_on_check_out)
+            .field("initialization_fail_fast", &self.initialization_fail_fast)
+            .field("max_lifetime", &self.max_lifetime)
+            .field("idle_timeout", &self.idle_timeout)
+            .field("connection_timeout", &self.connection_timeout)
+            .field("error_handler", &self.error_handler)
+            .field("connection_customizer", &self.connection_customizer)
+            .finish()
+    }
 }
 
 impl<C, E: Error> Builder<C, E> {
@@ -21,7 +48,19 @@ impl<C, E: Error> Builder<C, E> {
     ///
     /// Parameters are initialized with their default values.
     pub fn new() -> Builder<C, E> {
-        Builder { c: Config::default() }
+        Builder {
+            pool_size: 10,
+            min_idle: None,
+            helper_threads: 3,
+            test_on_check_out: true,
+            initialization_fail_fast: true,
+            idle_timeout: Some(Duration::from_secs(10 * 60)),
+            max_lifetime: Some(Duration::from_secs(30 * 60)),
+            connection_timeout: Duration::from_secs(30),
+            error_handler: Box::new(LoggingErrorHandler),
+            connection_customizer: Box::new(NopConnectionCustomizer),
+            thread_pool: None,
+        }
     }
 
     /// Sets `pool_size`.
@@ -31,13 +70,13 @@ impl<C, E: Error> Builder<C, E> {
     /// Panics if `pool_size` is 0.
     pub fn pool_size(mut self, pool_size: u32) -> Builder<C, E> {
         assert!(pool_size > 0, "pool_size must be positive");
-        self.c.pool_size = pool_size;
+        self.pool_size = pool_size;
         self
     }
 
     /// Sets `min_idle`.
     pub fn min_idle(mut self, min_idle: Option<u32>) -> Builder<C, E> {
-        self.c.min_idle = min_idle;
+        self.min_idle = min_idle;
         self
     }
 
@@ -50,25 +89,25 @@ impl<C, E: Error> Builder<C, E> {
     /// Panics if `helper_threads` is 0.
     pub fn helper_threads(mut self, helper_threads: u32) -> Builder<C, E> {
         assert!(helper_threads > 0, "helper_threads must be positive");
-        self.c.helper_threads = helper_threads;
+        self.helper_threads = helper_threads;
         self
     }
 
     /// Sets the `thread_pool`.
     pub fn thread_pool(mut self, thread_pool: Option<Arc<ScheduledThreadPool>>) -> Builder<C, E> {
-        self.c.thread_pool = thread_pool;
+        self.thread_pool = thread_pool;
         self
     }
 
     /// Sets `test_on_check_out`.
     pub fn test_on_check_out(mut self, test_on_check_out: bool) -> Builder<C, E> {
-        self.c.test_on_check_out = test_on_check_out;
+        self.test_on_check_out = test_on_check_out;
         self
     }
 
     /// Sets `initialization_fail_fast`.
     pub fn initialization_fail_fast(mut self, initialization_fail_fast: bool) -> Builder<C, E> {
-        self.c.initialization_fail_fast = initialization_fail_fast;
+        self.initialization_fail_fast = initialization_fail_fast;
         self
     }
 
@@ -82,7 +121,7 @@ impl<C, E: Error> Builder<C, E> {
             max_lifetime != Some(Duration::from_secs(0)),
             "max_lifetime must be positive"
         );
-        self.c.max_lifetime = max_lifetime;
+        self.max_lifetime = max_lifetime;
         self
     }
 
@@ -96,7 +135,7 @@ impl<C, E: Error> Builder<C, E> {
             idle_timeout != Some(Duration::from_secs(0)),
             "idle_timeout must be positive"
         );
-        self.c.idle_timeout = idle_timeout;
+        self.idle_timeout = idle_timeout;
         self
     }
 
@@ -110,13 +149,13 @@ impl<C, E: Error> Builder<C, E> {
             connection_timeout > Duration::from_secs(0),
             "connection_timeout must be positive"
         );
-        self.c.connection_timeout = connection_timeout;
+        self.connection_timeout = connection_timeout;
         self
     }
 
     /// Sets the `error_handler`.
     pub fn error_handler(mut self, error_handler: Box<HandleError<E>>) -> Builder<C, E> {
-        self.c.error_handler = error_handler;
+        self.error_handler = error_handler;
         self
     }
 
@@ -125,7 +164,7 @@ impl<C, E: Error> Builder<C, E> {
         mut self,
         connection_customizer: Box<CustomizeConnection<C, E>>,
     ) -> Builder<C, E> {
-        self.c.connection_customizer = connection_customizer;
+        self.connection_customizer = connection_customizer;
         self
     }
 
@@ -135,14 +174,36 @@ impl<C, E: Error> Builder<C, E> {
     ///
     /// Panics if `min_idle` is larger than `pool_size`.
     pub fn build(self) -> Config<C, E> {
-        if let Some(min_idle) = self.c.min_idle {
+        if let Some(min_idle) = self.min_idle {
             assert!(
-                self.c.pool_size >= min_idle,
+                self.pool_size >= min_idle,
                 "min_idle must be no larger than pool_size"
             );
         }
 
-        self.c
+        let thread_pool = match self.thread_pool {
+            Some(thread_pool) => thread_pool,
+            None => {
+                Arc::new(ScheduledThreadPool::with_name(
+                    "r2d2-worker-{}",
+                    self.helper_threads as usize,
+                ))
+            }
+        };
+
+        Config {
+            pool_size: self.pool_size,
+            min_idle: self.min_idle,
+            helper_threads: self.helper_threads,
+            test_on_check_out: self.test_on_check_out,
+            initialization_fail_fast: self.initialization_fail_fast,
+            max_lifetime: self.max_lifetime,
+            idle_timeout: self.idle_timeout,
+            connection_timeout: self.connection_timeout,
+            error_handler: self.error_handler,
+            connection_customizer: self.connection_customizer,
+            thread_pool: thread_pool,
+        }
     }
 }
 
@@ -161,7 +222,7 @@ pub struct Config<C, E> {
     connection_timeout: Duration,
     error_handler: Box<HandleError<E>>,
     connection_customizer: Box<CustomizeConnection<C, E>>,
-    thread_pool: Option<Arc<ScheduledThreadPool>>,
+    thread_pool: Arc<ScheduledThreadPool>,
 }
 
 // manual to avoid bounds on C and E
@@ -178,26 +239,13 @@ impl<C, E> fmt::Debug for Config<C, E> {
             .field("connection_timeout", &self.connection_timeout)
             .field("error_handler", &self.error_handler)
             .field("connection_customizer", &self.connection_customizer)
-            .field("thread_pool", &self.thread_pool.is_some())
             .finish()
     }
 }
 
 impl<C, E: Error> Default for Config<C, E> {
     fn default() -> Config<C, E> {
-        Config {
-            pool_size: 10,
-            min_idle: None,
-            helper_threads: 3,
-            test_on_check_out: true,
-            initialization_fail_fast: true,
-            idle_timeout: Some(Duration::from_secs(10 * 60)),
-            max_lifetime: Some(Duration::from_secs(30 * 60)),
-            connection_timeout: Duration::from_secs(30),
-            error_handler: Box::new(LoggingErrorHandler),
-            connection_customizer: Box::new(NopConnectionCustomizer),
-            thread_pool: None,
-        }
+        Config::builder().build()
     }
 }
 
@@ -229,6 +277,7 @@ impl<C, E: Error> Config<C, E> {
     /// operations such as connection creation and health checks.
     ///
     /// Defaults to 3.
+    #[deprecated(since = "0.7.4", note = "use thread_pool directly")]
     pub fn helper_threads(&self) -> u32 {
         self.helper_threads
     }
@@ -288,11 +337,11 @@ impl<C, E: Error> Config<C, E> {
         &*self.connection_customizer
     }
 
-    /// The thread pool used by the pool. If not present, a new pool will be
-    /// created.
+    /// The thread pool that the pool will use for asynchronous operations such
+    /// as connection creation and health checks.
     ///
-    /// Defaults to `None`.
-    pub fn thread_pool(&self) -> &Option<Arc<ScheduledThreadPool>> {
+    /// Defaults to a new pool with `helper_threads` threads.
+    pub fn thread_pool(&self) -> &Arc<ScheduledThreadPool> {
         &self.thread_pool
     }
 }
@@ -305,6 +354,7 @@ mod test {
     use test::Error;
 
     #[test]
+    #[allow(deprecated)]
     fn builder() {
         let config = Config::<(), Error>::builder()
             .pool_size(1)
