@@ -498,9 +498,9 @@ pub struct InitializationError(Option<String>);
 
 impl fmt::Display for InitializationError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        try!(fmt.write_str(self.description()));
+        fmt.write_str(self.description())?;
         if let Some(ref err) = self.0 {
-            try!(write!(fmt, ": {}", err));
+            write!(fmt, ": {}", err)?;
         }
         Ok(())
     }
@@ -518,9 +518,9 @@ pub struct GetTimeout(Option<String>);
 
 impl fmt::Display for GetTimeout {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        try!(fmt.write_str(self.description()));
+        fmt.write_str(self.description())?;
         if let Some(ref err) = self.0 {
-            try!(write!(fmt, ": {}", err));
+            write!(fmt, ": {}", err)?;
         }
         Ok(())
     }
