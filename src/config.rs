@@ -14,7 +14,6 @@ use {HandleError, LoggingErrorHandler, CustomizeConnection, NopConnectionCustomi
 pub struct Builder<C, E> {
     pool_size: u32,
     min_idle: Option<u32>,
-    helper_threads: u32,
     test_on_check_out: bool,
     initialization_fail_fast: bool,
     max_lifetime: Option<Duration>,
@@ -31,7 +30,6 @@ impl<C, E> fmt::Debug for Builder<C, E> {
         fmt.debug_struct("Builder")
             .field("pool_size", &self.pool_size)
             .field("min_idle", &self.min_idle)
-            .field("helper_threads", &self.helper_threads)
             .field("test_on_check_out", &self.test_on_check_out)
             .field("initialization_fail_fast", &self.initialization_fail_fast)
             .field("max_lifetime", &self.max_lifetime)
@@ -51,7 +49,6 @@ impl<C, E: Error> Builder<C, E> {
         Builder {
             pool_size: 10,
             min_idle: None,
-            helper_threads: 3,
             test_on_check_out: true,
             initialization_fail_fast: true,
             idle_timeout: Some(Duration::from_secs(10 * 60)),
@@ -77,19 +74,6 @@ impl<C, E: Error> Builder<C, E> {
     /// Sets `min_idle`.
     pub fn min_idle(mut self, min_idle: Option<u32>) -> Builder<C, E> {
         self.min_idle = min_idle;
-        self
-    }
-
-    /// Sets `helper_threads`.
-    ///
-    /// Ignored if `thread_pool` is `Some`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `helper_threads` is 0.
-    pub fn helper_threads(mut self, helper_threads: u32) -> Builder<C, E> {
-        assert!(helper_threads > 0, "helper_threads must be positive");
-        self.helper_threads = helper_threads;
         self
     }
 
@@ -186,7 +170,7 @@ impl<C, E: Error> Builder<C, E> {
             None => {
                 Arc::new(ScheduledThreadPool::with_name(
                     "r2d2-worker-{}",
-                    self.helper_threads as usize,
+                    3,
                 ))
             }
         };
@@ -194,7 +178,6 @@ impl<C, E: Error> Builder<C, E> {
         Config {
             pool_size: self.pool_size,
             min_idle: self.min_idle,
-            helper_threads: self.helper_threads,
             test_on_check_out: self.test_on_check_out,
             initialization_fail_fast: self.initialization_fail_fast,
             max_lifetime: self.max_lifetime,
@@ -214,7 +197,6 @@ impl<C, E: Error> Builder<C, E> {
 pub struct Config<C, E> {
     pool_size: u32,
     min_idle: Option<u32>,
-    helper_threads: u32,
     test_on_check_out: bool,
     initialization_fail_fast: bool,
     max_lifetime: Option<Duration>,
@@ -231,7 +213,6 @@ impl<C, E> fmt::Debug for Config<C, E> {
         fmt.debug_struct("Config")
             .field("pool_size", &self.pool_size)
             .field("min_idle", &self.min_idle)
-            .field("helper_threads", &self.helper_threads)
             .field("test_on_check_out", &self.test_on_check_out)
             .field("initialization_fail_fast", &self.initialization_fail_fast)
             .field("max_lifetime", &self.max_lifetime)
@@ -271,15 +252,6 @@ impl<C, E: Error> Config<C, E> {
     /// Defaults to None (equivalent to the value of `pool_size`).
     pub fn min_idle(&self) -> Option<u32> {
         self.min_idle
-    }
-
-    /// The number of threads that the pool will use for asynchronous
-    /// operations such as connection creation and health checks.
-    ///
-    /// Defaults to 3.
-    #[deprecated(since = "0.7.4", note = "use thread_pool directly")]
-    pub fn helper_threads(&self) -> u32 {
-        self.helper_threads
     }
 
     /// If true, the health of a connection will be verified via a call to
@@ -340,7 +312,7 @@ impl<C, E: Error> Config<C, E> {
     /// The thread pool that the pool will use for asynchronous operations such
     /// as connection creation and health checks.
     ///
-    /// Defaults to a new pool with `helper_threads` threads.
+    /// Defaults to a new pool with 3 threads.
     pub fn thread_pool(&self) -> &Arc<ScheduledThreadPool> {
         &self.thread_pool
     }
@@ -354,17 +326,14 @@ mod test {
     use test::Error;
 
     #[test]
-    #[allow(deprecated)]
     fn builder() {
         let config = Config::<(), Error>::builder()
             .pool_size(1)
-            .helper_threads(2)
             .test_on_check_out(false)
             .initialization_fail_fast(false)
             .connection_timeout(Duration::from_secs(3))
             .build();
         assert_eq!(1, config.pool_size());
-        assert_eq!(2, config.helper_threads());
         assert_eq!(false, config.test_on_check_out());
         assert_eq!(false, config.initialization_fail_fast());
         assert_eq!(Duration::from_secs(3), config.connection_timeout());
@@ -374,12 +343,6 @@ mod test {
     #[should_panic(expected = "pool_size must be positive")]
     fn builder_zero_pool_size() {
         Config::<(), Error>::builder().pool_size(0);
-    }
-
-    #[test]
-    #[should_panic(expected = "helper_threads must be positive")]
-    fn builder_zero_helper_threads() {
-        Config::<(), Error>::builder().helper_threads(0);
     }
 
     #[test]
