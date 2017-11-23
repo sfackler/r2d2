@@ -3,7 +3,7 @@ jobs:
   build:
     working_directory: ~/build
     docker:
-      - image: jimmycuadra/rust:1.9.0
+      - image: rust:1.19.0
     steps:
       - checkout
       - restore_cache:
@@ -14,10 +14,10 @@ jobs:
           paths:
             - ~/.cargo/registry/index
       - restore_cache:
-          key: dependencies-1.9-{{ checksum "Cargo.lock" }}
+          key: dependencies-1.19-{{ checksum "Cargo.lock" }}
       - run: cargo test
       - save_cache:
-          key: dependencies-1.9-{{ checksum "Cargo.lock" }}
+          key: dependencies-1.19-{{ checksum "Cargo.lock" }}
           paths:
             - target
             - ~/.cargo/registry/cache
