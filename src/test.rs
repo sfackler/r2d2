@@ -1,11 +1,11 @@
 use antidote::Mutex;
-use std::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, AtomicUsize, ATOMIC_USIZE_INIT, AtomicIsize,
-                        Ordering};
-use std::sync::mpsc::{self, SyncSender, Receiver};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering, ATOMIC_BOOL_INIT,
+                        ATOMIC_USIZE_INIT};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::time::Duration;
-use std::{mem, thread, fmt, error};
+use std::{error, fmt, mem, thread};
 
-use {ManageConnection, CustomizeConnection, Pool};
+use {CustomizeConnection, ManageConnection, Pool};
 
 #[derive(Debug)]
 pub struct Error;
@@ -161,7 +161,9 @@ fn test_issue_2_unlocked_during_is_valid() {
         .unwrap();
 
     let p2 = pool.clone();
-    let t = thread::spawn(move || { p2.get().ok().unwrap(); });
+    let t = thread::spawn(move || {
+        p2.get().ok().unwrap();
+    });
 
     r1.recv().unwrap();
     // get call by other task has triggered the health check
@@ -307,7 +309,6 @@ fn test_connection_customizer() {
         assert!(DROPPED.load(Ordering::SeqCst));
     }
     assert!(RELEASED.load(Ordering::SeqCst));
-
 }
 
 #[test]
@@ -432,7 +433,11 @@ fn min_idle() {
         }
     }
 
-    let pool = Pool::builder().max_size(5).min_idle(Some(2)).build(Handler).unwrap();
+    let pool = Pool::builder()
+        .max_size(5)
+        .min_idle(Some(2))
+        .build(Handler)
+        .unwrap();
     thread::sleep(Duration::from_secs(1));
     assert_eq!(2, pool.state().idle_connections);
     assert_eq!(2, pool.state().connections);

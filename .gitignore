@@ -3,3 +3,4 @@ Cargo.lock
 .cargo/
 .idea/
 *.iml
+.vscode/

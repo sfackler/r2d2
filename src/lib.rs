@@ -37,17 +37,17 @@
 //! }
 //! ```
 #![warn(missing_docs)]
-#![doc(html_root_url="https://docs.rs/r2d2/0.7")]
+#![doc(html_root_url = "https://docs.rs/r2d2/0.7")]
 
 extern crate antidote;
-extern crate scheduled_thread_pool;
 #[macro_use]
 extern crate log;
+extern crate scheduled_thread_pool;
 
-use antidote::{Mutex, MutexGuard, Condvar};
+use antidote::{Condvar, Mutex, MutexGuard};
 use std::cmp;
 use std::collections::VecDeque;
-use std::error::Error;
+use std::error;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::mem;
@@ -68,7 +68,7 @@ pub trait ManageConnection: Send + Sync + 'static {
     type Connection: Send + 'static;
 
     /// The error type returned by `Connection`s.
-    type Error: Error + 'static;
+    type Error: error::Error + 'static;
 
     /// Attempts to create a new connection.
     fn connect(&self) -> Result<Self::Connection, Self::Error>;
@@ -111,7 +111,7 @@ pub struct LoggingErrorHandler;
 
 impl<E> HandleError<E> for LoggingErrorHandler
 where
-    E: Error,
+    E: error::Error,
 {
     fn handle_error(&self, error: E) {
         error!("{}", error);
@@ -200,9 +200,7 @@ fn establish_idle_connections<M>(
 ) where
     M: ManageConnection,
 {
-    let min = shared.config.min_idle.unwrap_or(
-        shared.config.max_size,
-    );
+    let min = shared.config.min_idle.unwrap_or(shared.config.max_size);
     let idle = internals.conns.len() as u32;
     for _ in idle..min {
         add_connection(shared, internals);
@@ -330,9 +328,7 @@ where
     M: ManageConnection,
 {
     /// Creates a new connection pool with a default configuration.
-    pub fn new(
-        manager: M,
-    ) -> Result<Pool<M>, InitializationError> {
+    pub fn new(manager: M) -> Result<Pool<M>, Error> {
         Pool::builder().build(manager)
     }
 
@@ -375,18 +371,16 @@ where
         Pool(shared)
     }
 
-    fn wait_for_initialization(&self) -> Result<(), InitializationError> {
+    fn wait_for_initialization(&self) -> Result<(), Error> {
         let end = Instant::now() + self.0.config.connection_timeout;
         let mut internals = self.0.internals.lock();
 
-        let initial_size = self.0.config.min_idle.unwrap_or(
-            self.0.config.max_size,
-        );
+        let initial_size = self.0.config.min_idle.unwrap_or(self.0.config.max_size);
 
         while internals.num_conns != initial_size {
             let now = Instant::now();
             if now >= end {
-                return Err(InitializationError(internals.last_error.take()));
+                return Err(Error(internals.last_error.take()));
             }
             internals = self.0.cond.wait_timeout(internals, end - now).0;
         }
@@ -398,7 +392,7 @@ where
     ///
     /// Waits for at most the configured connection timeout before returning an
     /// error.
-    pub fn get(&self) -> Result<PooledConnection<M>, GetTimeout> {
+    pub fn get(&self) -> Result<PooledConnection<M>, Error> {
         let end = Instant::now() + self.0.config.connection_timeout;
         let mut internals = self.0.internals.lock();
 
@@ -414,7 +408,7 @@ where
 
             let now = Instant::now();
             if now >= end {
-                return Err(GetTimeout(internals.last_error.take()));
+                return Err(Error(internals.last_error.take()));
             }
             internals = self.0.cond.wait_timeout(internals, end - now).0;
         }
@@ -519,13 +513,13 @@ where
     }
 }
 
-/// An error returned by `Pool::new` if it fails to initialize connections.
+/// The error type returned by methods in this crate.
 #[derive(Debug)]
-pub struct InitializationError(Option<String>);
+pub struct Error(Option<String>);
 
-impl fmt::Display for InitializationError {
+impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.write_str(self.description())?;
+        fmt.write_str(error::Error::description(self))?;
         if let Some(ref err) = self.0 {
             write!(fmt, ": {}", err)?;
         }
@@ -533,29 +527,9 @@ impl fmt::Display for InitializationError {
     }
 }
 
-impl Error for InitializationError {
+impl error::Error for Error {
     fn description(&self) -> &str {
-        "unable to initialize connections"
-    }
-}
-
-/// An error returned by `Pool::get` if it times out without retrieving a connection.
-#[derive(Debug)]
-pub struct GetTimeout(Option<String>);
-
-impl fmt::Display for GetTimeout {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.write_str(self.description())?;
-        if let Some(ref err) = self.0 {
-            write!(fmt, ": {}", err)?;
-        }
-        Ok(())
-    }
-}
-
-impl Error for GetTimeout {
-    fn description(&self) -> &str {
-        "timed out while waiting for a connection"
+        "timed out waiting for connection"
     }
 }
 

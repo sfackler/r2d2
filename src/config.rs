@@ -4,7 +4,8 @@ use std::time::Duration;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use {HandleError, LoggingErrorHandler, CustomizeConnection, NopConnectionCustomizer, InitializationError, ManageConnection, Pool};
+use {CustomizeConnection, Error, HandleError, LoggingErrorHandler, ManageConnection,
+     NopConnectionCustomizer, Pool};
 
 /// A builder for a connection pool.
 pub struct Builder<M>
@@ -26,7 +27,7 @@ where
 
 impl<M> fmt::Debug for Builder<M>
 where
-    M: ManageConnection
+    M: ManageConnection,
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.debug_struct("Builder")
@@ -65,7 +66,7 @@ where
 
 impl<M> Builder<M>
 where
-    M: ManageConnection
+    M: ManageConnection,
 {
     /// Constructs a new `Builder`.
     ///
@@ -211,7 +212,7 @@ where
     /// # Panics
     ///
     /// Panics if `min_idle` is greater than `max_size`.
-    pub fn build(self, manager: M) -> Result<Pool<M>, InitializationError> {
+    pub fn build(self, manager: M) -> Result<Pool<M>, Error> {
         let pool = self.build_unchecked(manager);
         pool.wait_for_initialization()?;
         Ok(pool)
@@ -235,12 +236,7 @@ where
 
         let thread_pool = match self.thread_pool {
             Some(thread_pool) => thread_pool,
-            None => {
-                Arc::new(ScheduledThreadPool::with_name(
-                    "r2d2-worker-{}",
-                    3,
-                ))
-            }
+            None => Arc::new(ScheduledThreadPool::with_name("r2d2-worker-{}", 3)),
         };
 
         let config = Config {
