@@ -319,7 +319,7 @@ where
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.debug_struct("Pool")
             .field("state", &self.state())
-            .field("config", self.config())
+            .field("config", &self.0.config)
             .field("manager", &self.0.manager)
             .finish()
     }
@@ -392,21 +392,6 @@ where
         }
 
         Ok(())
-    }
-
-    /// Returns information about the current state of the pool.
-    pub fn state(&self) -> State {
-        let internals = self.0.internals.lock();
-        State {
-            connections: internals.num_conns,
-            idle_connections: internals.conns.len() as u32,
-            _p: (),
-        }
-    }
-
-    /// Returns the pool's configuration.
-    pub fn config(&self) -> &Config<M::Connection, M::Error> {
-        &self.0.config
     }
 
     /// Retrieves a connection from the pool.
@@ -491,6 +476,46 @@ where
             internals.conns.push_back(conn);
             self.0.cond.notify_one();
         }
+    }
+
+    /// Returns information about the current state of the pool.
+    pub fn state(&self) -> State {
+        let internals = self.0.internals.lock();
+        State {
+            connections: internals.num_conns,
+            idle_connections: internals.conns.len() as u32,
+            _p: (),
+        }
+    }
+
+    /// Returns the configured maximum pool size.
+    pub fn max_size(&self) -> u32 {
+        self.0.config.max_size
+    }
+
+    /// Returns the configured mimimum idle connection count.
+    pub fn min_idle(&self) -> Option<u32> {
+        self.0.config.min_idle
+    }
+
+    /// Returns if the pool is configured to test connections on check out.
+    pub fn test_on_check_out(&self) -> bool {
+        self.0.config.test_on_check_out
+    }
+
+    /// Returns the configured maximum connection lifetime.
+    pub fn max_lifetime(&self) -> Option<Duration> {
+        self.0.config.max_lifetime
+    }
+
+    /// Returns the configured idle connection timeout.
+    pub fn idle_timeout(&self) -> Option<Duration> {
+        self.0.config.idle_timeout
+    }
+
+    /// Returns the configured connection timeout.
+    pub fn connection_timeout(&self) -> Duration {
+        self.0.config.connection_timeout
     }
 }
 
