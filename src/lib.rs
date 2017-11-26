@@ -396,7 +396,7 @@ where
 
     /// Retrieves a connection from the pool.
     ///
-    /// Waits for at most `Config::connection_timeout` before returning an
+    /// Waits for at most the configured connection timeout before returning an
     /// error.
     pub fn get(&self) -> Result<PooledConnection<M>, GetTimeout> {
         let end = Instant::now() + self.0.config.connection_timeout;
