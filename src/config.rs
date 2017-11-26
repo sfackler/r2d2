@@ -196,6 +196,7 @@ where
         self
     }
 
+    // used by tests
     #[allow(dead_code)]
     pub(crate) fn reaper_rate(mut self, reaper_rate: Duration) -> Builder<M> {
         self.reaper_rate = reaper_rate;
@@ -204,7 +205,10 @@ where
 
     /// Consumes the builder, returning a new, initialized pool.
     ///
-    /// # Failure
+    /// It will block until the pool has established its configured minimum
+    /// number of connections, or it times out.
+    ///
+    /// # Errors
     ///
     /// Returns an error if the pool is unable to open its minimum number of
     /// connections.
@@ -218,7 +222,7 @@ where
         Ok(pool)
     }
 
-    /// Consumes the buffer, returning a new pool.
+    /// Consumes the builder, returning a new pool.
     ///
     /// Unlike `build`, this method does not wait for any connections to be
     /// established before returning.
