@@ -2,11 +2,10 @@ use antidote::Mutex;
 use std::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, AtomicUsize, ATOMIC_USIZE_INIT, AtomicIsize,
                         Ordering};
 use std::sync::mpsc::{self, SyncSender, Receiver};
-use std::sync::Arc;
 use std::time::Duration;
 use std::{mem, thread, fmt, error};
 
-use {ManageConnection, CustomizeConnection, Pool, Config};
+use {ManageConnection, CustomizeConnection, Pool};
 
 #[derive(Debug)]
 pub struct Error;
@@ -73,10 +72,9 @@ impl ManageConnection for NthConnectFailManager {
 }
 
 #[test]
-fn test_pool_size_ok() {
-    let config = Config::builder().pool_size(5).build();
+fn test_max_size_ok() {
     let manager = NthConnectFailManager { n: Mutex::new(5) };
-    let pool = Pool::new(config, manager).unwrap();
+    let pool = Pool::builder().max_size(5).build(manager).unwrap();
     let mut conns = vec![];
     for _ in 0..5 {
         conns.push(pool.get().ok().unwrap());
@@ -85,8 +83,7 @@ fn test_pool_size_ok() {
 
 #[test]
 fn test_acquire_release() {
-    let config = Config::builder().pool_size(2).build();
-    let pool = Pool::new(config, OkManager).unwrap();
+    let pool = Pool::builder().max_size(2).build(OkManager).unwrap();
 
     let conn1 = pool.get().ok().unwrap();
     let conn2 = pool.get().ok().unwrap();
@@ -98,8 +95,7 @@ fn test_acquire_release() {
 
 #[test]
 fn try_get() {
-    let config = Config::builder().pool_size(2).build();
-    let pool = Pool::new(config, OkManager).unwrap();
+    let pool = Pool::builder().max_size(2).build(OkManager).unwrap();
 
     let conn1 = pool.try_get();
     let conn2 = pool.try_get();
@@ -152,16 +148,17 @@ fn test_issue_2_unlocked_during_is_valid() {
     let (s1, r1) = mpsc::sync_channel(0);
     let (s2, r2) = mpsc::sync_channel(0);
 
-    let config = Config::builder()
-        .test_on_check_out(true)
-        .pool_size(2)
-        .build();
     let manager = BlockingChecker {
         first: AtomicBool::new(true),
         s: Mutex::new(s1),
         r: Mutex::new(r2),
     };
-    let pool = Arc::new(Pool::new(config, manager).unwrap());
+
+    let pool = Pool::builder()
+        .test_on_check_out(true)
+        .max_size(2)
+        .build(manager)
+        .unwrap();
 
     let p2 = pool.clone();
     let t = thread::spawn(move || { p2.get().ok().unwrap(); });
@@ -206,7 +203,7 @@ fn test_drop_on_broken() {
         }
     }
 
-    let pool = Pool::new(Default::default(), Handler).unwrap();
+    let pool = Pool::new(Handler).unwrap();
 
     drop(pool.get().ok().unwrap());
 
@@ -215,33 +212,32 @@ fn test_drop_on_broken() {
 
 #[test]
 fn test_initialization_failure() {
-    let config = Config::builder()
-        .connection_timeout(Duration::from_secs(1))
-        .build();
     let manager = NthConnectFailManager { n: Mutex::new(0) };
-    let err = Pool::new(config, manager).err().unwrap();
+    let err = Pool::builder()
+        .connection_timeout(Duration::from_secs(1))
+        .build(manager)
+        .err()
+        .unwrap();
     assert!(err.to_string().contains("blammo"));
 }
 
 #[test]
 fn test_lazy_initialization_failure() {
-    let config = Config::builder()
-        .connection_timeout(Duration::from_secs(1))
-        .initialization_fail_fast(false)
-        .build();
     let manager = NthConnectFailManager { n: Mutex::new(0) };
-    let pool = Pool::new(config, manager).unwrap();
+    let pool = Pool::builder()
+        .connection_timeout(Duration::from_secs(1))
+        .build_unchecked(manager);
     let err = pool.get().err().unwrap();
     assert!(err.to_string().contains("blammo"));
 }
 
 #[test]
 fn test_get_timeout() {
-    let config = Config::builder()
-        .pool_size(1)
+    let pool = Pool::builder()
+        .max_size(1)
         .connection_timeout(Duration::from_secs(1))
-        .build();
-    let pool = Pool::new(config, OkManager).unwrap();
+        .build(OkManager)
+        .unwrap();
     let _c = pool.get().unwrap();
     pool.get().err().unwrap();
 }
@@ -299,10 +295,10 @@ fn test_connection_customizer() {
         }
     }
 
-    let config = Config::builder()
+    let pool = Pool::builder()
         .connection_customizer(Box::new(Customizer))
-        .build();
-    let pool = Pool::new(config, Handler).unwrap();
+        .build(Handler)
+        .unwrap();
 
     {
         let conn = pool.get().unwrap();
@@ -349,11 +345,11 @@ fn test_idle_timeout() {
         }
     }
 
-    let config = Config::builder()
-        .pool_size(5)
+    let pool = Pool::builder()
+        .max_size(5)
         .idle_timeout(Some(Duration::from_secs(1)))
-        .build();
-    let pool = Pool::new_inner(config, Handler(AtomicIsize::new(5)), Duration::from_secs(1))
+        .reaper_rate(Duration::from_secs(1))
+        .build(Handler(AtomicIsize::new(5)))
         .unwrap();
     let conn = pool.get().unwrap();
     thread::sleep(Duration::from_secs(2));
@@ -397,12 +393,12 @@ fn test_max_lifetime() {
         }
     }
 
-    let config = Config::builder()
-        .pool_size(5)
+    let pool = Pool::builder()
+        .max_size(5)
         .max_lifetime(Some(Duration::from_secs(1)))
         .connection_timeout(Duration::from_secs(1))
-        .build();
-    let pool = Pool::new_inner(config, Handler(AtomicIsize::new(5)), Duration::from_secs(1))
+        .reaper_rate(Duration::from_secs(1))
+        .build(Handler(AtomicIsize::new(5)))
         .unwrap();
     let conn = pool.get().unwrap();
     thread::sleep(Duration::from_secs(2));
@@ -436,8 +432,7 @@ fn min_idle() {
         }
     }
 
-    let config = Config::builder().pool_size(5).min_idle(Some(2)).build();
-    let pool = Pool::new(config, Handler).unwrap();
+    let pool = Pool::builder().max_size(5).min_idle(Some(2)).build(Handler).unwrap();
     thread::sleep(Duration::from_secs(1));
     assert_eq!(2, pool.state().idle_connections);
     assert_eq!(2, pool.state().connections);
@@ -481,11 +476,11 @@ fn conns_drop_on_pool_drop() {
         }
     }
 
-    let config = Config::builder()
+    let pool = Pool::builder()
         .max_lifetime(Some(Duration::from_secs(10)))
-        .pool_size(10)
-        .build();
-    let pool = Pool::new(config, Handler).unwrap();
+        .max_size(10)
+        .build(Handler)
+        .unwrap();
     drop(pool);
     for _ in 0..10 {
         if DROPPED.load(Ordering::SeqCst) == 10 {

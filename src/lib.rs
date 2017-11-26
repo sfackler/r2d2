@@ -20,12 +20,11 @@
 //! extern crate r2d2_foodb;
 //!
 //! fn main() {
-//!     let config = r2d2::Config::builder()
-//!         .pool_size(15)
-//!         .build();
 //!     let manager = r2d2_foodb::FooConnectionManager::new("localhost:1234");
-//!
-//!     let pool = r2d2::Pool::new(config, manager).unwrap();
+//!     let config = r2d2::Config::builder()
+//!         .max_size(15)
+//!         .build(manager)
+//!         .unwrap();
 //!
 //!     for _ in 0..20 {
 //!         let pool = pool.clone();
@@ -55,10 +54,10 @@ use std::mem;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-#[doc(inline)]
-pub use config::Config;
+pub use config::Builder;
+use config::Config;
 
-pub mod config;
+mod config;
 
 #[cfg(test)]
 mod test;
@@ -191,7 +190,7 @@ fn drop_conns<M>(
     drop(internals); // make sure we run connection destructors without this locked
 
     for conn in conns {
-        shared.config.connection_customizer().on_release(conn);
+        shared.config.connection_customizer.on_release(conn);
     }
 }
 
@@ -201,8 +200,8 @@ fn establish_idle_connections<M>(
 ) where
     M: ManageConnection,
 {
-    let min = shared.config.min_idle().unwrap_or(
-        shared.config.pool_size(),
+    let min = shared.config.min_idle.unwrap_or(
+        shared.config.max_size,
     );
     let idle = internals.conns.len() as u32;
     for _ in idle..min {
@@ -214,7 +213,7 @@ fn add_connection<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<
 where
     M: ManageConnection,
 {
-    if internals.num_conns + internals.pending_conns >= shared.config.pool_size() {
+    if internals.num_conns + internals.pending_conns >= shared.config.max_size {
         return;
     }
 
@@ -226,7 +225,7 @@ where
         M: ManageConnection,
     {
         let new_shared = Arc::downgrade(shared);
-        shared.config.thread_pool().execute_after(delay, move || {
+        shared.config.thread_pool.execute_after(delay, move || {
             let shared = match new_shared.upgrade() {
                 Some(shared) => shared,
                 None => return,
@@ -235,7 +234,7 @@ where
             let conn = shared.manager.connect().and_then(|mut conn| {
                 shared
                     .config
-                    .connection_customizer()
+                    .connection_customizer
                     .on_acquire(&mut conn)
                     .map(|_| conn)
             });
@@ -258,9 +257,9 @@ where
                 }
                 Err(err) => {
                     shared.internals.lock().last_error = Some(err.to_string());
-                    shared.config.error_handler().handle_error(err);
+                    shared.config.error_handler.handle_error(err);
                     let delay = cmp::max(Duration::from_millis(200), delay);
-                    let delay = cmp::min(shared.config.connection_timeout() / 2, delay * 2);
+                    let delay = cmp::min(shared.config.connection_timeout / 2, delay * 2);
                     inner(delay, &shared);
                 }
             }
@@ -277,7 +276,7 @@ where
         None => return,
     };
 
-    let mut old = VecDeque::with_capacity(shared.config.pool_size() as usize);
+    let mut old = VecDeque::with_capacity(shared.config.max_size as usize);
     let mut to_drop = vec![];
 
     let mut internals = shared.internals.lock();
@@ -285,10 +284,10 @@ where
     let now = Instant::now();
     for conn in old {
         let mut reap = false;
-        if let Some(timeout) = shared.config.idle_timeout() {
+        if let Some(timeout) = shared.config.idle_timeout {
             reap |= now - conn.idle_start >= timeout;
         }
-        if let Some(lifetime) = shared.config.max_lifetime() {
+        if let Some(lifetime) = shared.config.max_lifetime {
             reap |= now - conn.conn.birth >= lifetime;
         }
         if reap {
@@ -330,16 +329,16 @@ impl<M> Pool<M>
 where
     M: ManageConnection,
 {
-    /// Creates a new connection pool.
-    ///
-    /// Returns an `Err` value if `initialization_fail_fast` is set to true in
-    /// the configuration and the pool is unable to open all of its
-    /// connections.
+    /// Creates a new connection pool with a default configuration.
     pub fn new(
-        config: Config<M::Connection, M::Error>,
         manager: M,
     ) -> Result<Pool<M>, InitializationError> {
-        Pool::new_inner(config, manager, Duration::from_secs(30))
+        Pool::builder().build(manager)
+    }
+
+    /// Returns a builder type to configure a new pool.
+    pub fn builder() -> Builder<M> {
+        Builder::new()
     }
 
     // for testing
@@ -347,9 +346,9 @@ where
         config: Config<M::Connection, M::Error>,
         manager: M,
         reaper_rate: Duration,
-    ) -> Result<Pool<M>, InitializationError> {
+    ) -> Pool<M> {
         let internals = PoolInternals {
-            conns: VecDeque::with_capacity(config.pool_size() as usize),
+            conns: VecDeque::with_capacity(config.max_size as usize),
             num_conns: 0,
             pending_conns: 0,
             last_error: None,
@@ -362,34 +361,37 @@ where
             cond: Condvar::new(),
         });
 
-        let initial_size = shared.config.min_idle().unwrap_or(
-            shared.config.pool_size(),
-        );
         establish_idle_connections(&shared, &mut shared.internals.lock());
 
-        if shared.config.initialization_fail_fast() {
-            let end = Instant::now() + shared.config.connection_timeout();
-            let mut internals = shared.internals.lock();
-
-            while internals.num_conns != initial_size {
-                let now = Instant::now();
-                if now >= end {
-                    return Err(InitializationError(internals.last_error.take()));
-                }
-                internals = shared.cond.wait_timeout(internals, end - now).0;
-            }
-        }
-
-        if shared.config.max_lifetime().is_some() || shared.config.idle_timeout().is_some() {
+        if shared.config.max_lifetime.is_some() || shared.config.idle_timeout.is_some() {
             let s = Arc::downgrade(&shared);
-            shared.config.thread_pool().execute_at_fixed_rate(
+            shared.config.thread_pool.execute_at_fixed_rate(
                 reaper_rate,
                 reaper_rate,
                 move || reap_connections(&s),
             );
         }
 
-        Ok(Pool(shared))
+        Pool(shared)
+    }
+
+    fn wait_for_initialization(&self) -> Result<(), InitializationError> {
+        let end = Instant::now() + self.0.config.connection_timeout;
+        let mut internals = self.0.internals.lock();
+
+        let initial_size = self.0.config.min_idle.unwrap_or(
+            self.0.config.max_size,
+        );
+
+        while internals.num_conns != initial_size {
+            let now = Instant::now();
+            if now >= end {
+                return Err(InitializationError(internals.last_error.take()));
+            }
+            internals = self.0.cond.wait_timeout(internals, end - now).0;
+        }
+
+        Ok(())
     }
 
     /// Returns information about the current state of the pool.
@@ -412,7 +414,7 @@ where
     /// Waits for at most `Config::connection_timeout` before returning an
     /// error.
     pub fn get(&self) -> Result<PooledConnection<M>, GetTimeout> {
-        let end = Instant::now() + self.0.config.connection_timeout();
+        let end = Instant::now() + self.0.config.connection_timeout;
         let mut internals = self.0.internals.lock();
 
         loop {
@@ -421,7 +423,7 @@ where
                 Err(i) => internals = i,
             }
 
-            if internals.num_conns + internals.pending_conns < self.0.config.pool_size() {
+            if internals.num_conns + internals.pending_conns < self.0.config.max_size {
                 add_connection(&self.0, &mut internals);
             }
 
@@ -451,10 +453,10 @@ where
                 establish_idle_connections(&self.0, &mut internals);
                 drop(internals);
 
-                if self.0.config.test_on_check_out() {
+                if self.0.config.test_on_check_out {
                     if let Err(e) = self.0.manager.is_valid(&mut conn.conn.conn) {
                         let msg = e.to_string();
-                        self.0.config.error_handler().handle_error(e);
+                        self.0.config.error_handler.handle_error(e);
                         // FIXME we shouldn't have to lock, unlock, and relock here
                         internals = self.0.internals.lock();
                         internals.last_error = Some(msg);

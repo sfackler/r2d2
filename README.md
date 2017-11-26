@@ -29,6 +29,7 @@ Backend                                                             | Adaptor Cr
 # Example
 
 Using an imaginary "foodb" database.
+
 ```rust
 use std::thread;
 
@@ -36,12 +37,11 @@ extern crate r2d2;
 extern crate r2d2_foodb;
 
 fn main() {
-    let config = r2d2::Config::builder()
-        .pool_size(15)
-        .build();
     let manager = r2d2_foodb::FooConnectionManager::new("localhost:1234");
-
-    let pool = r2d2::Pool::new(config, manager).unwrap();
+    let pool = r2d2::Pool::builder()
+        .max_size(15)
+        .build(manager)
+        .unwrap();
 
     for _ in 0..20 {
         let pool = pool.clone();
