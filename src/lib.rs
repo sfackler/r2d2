@@ -21,7 +21,7 @@
 //!
 //! fn main() {
 //!     let manager = r2d2_foodb::FooConnectionManager::new("localhost:1234");
-//!     let config = r2d2::Pool::builder()
+//!     let pool = r2d2::Pool::builder()
 //!         .max_size(15)
 //!         .build(manager)
 //!         .unwrap();
