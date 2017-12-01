@@ -61,6 +61,8 @@
 * The `Pool::config` method has been replaced with accessor methods on `Pool` to directly access
     configuration, such as `Pool::min_idle`.
 
+* The `scheduled_thread_pool` crate has been upgraded from 0.1 to 0.2.
+
 ### Removed
 
 * The deprecated `Builder::num_threads` method has been removed. Construct a `ScheduledThreadPool`
