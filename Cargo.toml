@@ -10,5 +10,5 @@ keywords = ["database", "pool"]
 
 [dependencies]
 antidote = "1.0"
-log = "0.3"
+log = "0.4"
 scheduled-thread-pool = "0.2"
