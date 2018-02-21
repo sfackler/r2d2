@@ -25,6 +25,7 @@ Backend                                                             | Adaptor Cr
 [rusted-cypher](https://github.com/livioribeiro/rusted-cypher)      | [r2d2-cypher](https://github.com/flosse/r2d2-cypher)
 [diesel](https://github.com/sgrif/diesel)                           | [r2d2-diesel](https://github.com/sgrif/r2d2-diesel)
 [couchdb](https://github.com/chill-rs/chill)                        | [r2d2-couchdb](https://github.com/scorphus/r2d2-couchdb)
+[odbc](https://github.com/Koka/odbc-rs)                             | [r2d2-odbc](https://github.com/Koka/r2d2-odbc)
 
 # Example
 
