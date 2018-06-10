@@ -184,9 +184,7 @@ fn drop_conns<M>(
     M: ManageConnection,
 {
     internals.num_conns -= conns.len() as u32;
-    for _ in 0..conns.len() {
-        establish_idle_connections(shared, &mut internals);
-    }
+    establish_idle_connections(shared, &mut internals);
     drop(internals); // make sure we run connection destructors without this locked
 
     for conn in conns {
@@ -402,9 +400,7 @@ where
                 Err(i) => internals = i,
             }
 
-            if internals.num_conns + internals.pending_conns < self.0.config.max_size {
-                add_connection(&self.0, &mut internals);
-            }
+            add_connection(&self.0, &mut internals);
 
             let now = Instant::now();
             if now >= end {
