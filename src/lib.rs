@@ -49,8 +49,8 @@ use std::cmp;
 use std::collections::VecDeque;
 use std::error;
 use std::fmt;
-use std::ops::{Deref, DerefMut};
 use std::mem;
+use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -359,11 +359,10 @@ where
 
         if shared.config.max_lifetime.is_some() || shared.config.idle_timeout.is_some() {
             let s = Arc::downgrade(&shared);
-            shared.config.thread_pool.execute_at_fixed_rate(
-                reaper_rate,
-                reaper_rate,
-                move || reap_connections(&s),
-            );
+            shared
+                .config
+                .thread_pool
+                .execute_at_fixed_rate(reaper_rate, reaper_rate, move || reap_connections(&s));
         }
 
         Pool(shared)

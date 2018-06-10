@@ -1,11 +1,13 @@
 use scheduled_thread_pool::ScheduledThreadPool;
 use std::fmt;
-use std::time::Duration;
 use std::marker::PhantomData;
 use std::sync::Arc;
+use std::time::Duration;
 
-use {CustomizeConnection, Error, HandleError, LoggingErrorHandler, ManageConnection,
-     NopConnectionCustomizer, Pool};
+use {
+    CustomizeConnection, Error, HandleError, LoggingErrorHandler, ManageConnection,
+    NopConnectionCustomizer, Pool,
+};
 
 /// A builder for a connection pool.
 pub struct Builder<M>

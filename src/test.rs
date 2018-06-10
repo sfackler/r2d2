@@ -1,6 +1,7 @@
 use antidote::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering, ATOMIC_BOOL_INIT,
-                        ATOMIC_USIZE_INIT};
+use std::sync::atomic::{
+    AtomicBool, AtomicIsize, AtomicUsize, Ordering, ATOMIC_BOOL_INIT, ATOMIC_USIZE_INIT,
+};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::time::Duration;
 use std::{error, fmt, mem, thread};
