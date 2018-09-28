@@ -46,7 +46,6 @@ extern crate scheduled_thread_pool;
 
 use antidote::{Condvar, Mutex, MutexGuard};
 use std::cmp;
-use std::collections::VecDeque;
 use std::error;
 use std::fmt;
 use std::mem;
@@ -160,7 +159,7 @@ struct IdleConn<C> {
 }
 
 struct PoolInternals<C> {
-    conns: VecDeque<IdleConn<C>>,
+    conns: Vec<IdleConn<C>>,
     num_conns: u32,
     pending_conns: u32,
     last_error: Option<String>,
@@ -246,7 +245,7 @@ where
                         },
                         idle_start: now,
                     };
-                    internals.conns.push_back(conn);
+                    internals.conns.push(conn);
                     internals.pending_conns -= 1;
                     internals.num_conns += 1;
                     shared.cond.notify_one();
@@ -272,7 +271,7 @@ where
         None => return,
     };
 
-    let mut old = VecDeque::with_capacity(shared.config.max_size as usize);
+    let mut old = Vec::with_capacity(shared.config.max_size as usize);
     let mut to_drop = vec![];
 
     let mut internals = shared.internals.lock();
@@ -289,7 +288,7 @@ where
         if reap {
             to_drop.push(conn.conn.conn);
         } else {
-            internals.conns.push_back(conn);
+            internals.conns.push(conn);
         }
     }
     drop_conns(&shared, internals, to_drop);
@@ -342,7 +341,7 @@ where
         reaper_rate: Duration,
     ) -> Pool<M> {
         let internals = PoolInternals {
-            conns: VecDeque::with_capacity(config.max_size as usize),
+            conns: Vec::with_capacity(config.max_size as usize),
             num_conns: 0,
             pending_conns: 0,
             last_error: None,
@@ -423,7 +422,7 @@ where
         mut internals: MutexGuard<'a, PoolInternals<M::Connection>>,
     ) -> Result<PooledConnection<M>, MutexGuard<'a, PoolInternals<M::Connection>>> {
         loop {
-            if let Some(mut conn) = internals.conns.pop_front() {
+            if let Some(mut conn) = internals.conns.pop() {
                 establish_idle_connections(&self.0, &mut internals);
                 drop(internals);
 
@@ -462,7 +461,7 @@ where
                 conn: conn,
                 idle_start: Instant::now(),
             };
-            internals.conns.push_back(conn);
+            internals.conns.push(conn);
             self.0.cond.notify_one();
         }
     }
