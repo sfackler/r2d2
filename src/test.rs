@@ -361,6 +361,55 @@ fn test_idle_timeout() {
 }
 
 #[test]
+fn idle_timeout_partial_use() {
+    static DROPPED: AtomicUsize = ATOMIC_USIZE_INIT;
+
+    struct Connection;
+
+    impl Drop for Connection {
+        fn drop(&mut self) {
+            DROPPED.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    struct Handler(AtomicIsize);
+
+    impl ManageConnection for Handler {
+        type Connection = Connection;
+        type Error = Error;
+
+        fn connect(&self) -> Result<Connection, Error> {
+            if self.0.fetch_sub(1, Ordering::SeqCst) > 0 {
+                Ok(Connection)
+            } else {
+                Err(Error)
+            }
+        }
+
+        fn is_valid(&self, _: &mut Connection) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn has_broken(&self, _: &mut Connection) -> bool {
+            false
+        }
+    }
+
+    let pool = Pool::builder()
+        .max_size(5)
+        .idle_timeout(Some(Duration::from_secs(1)))
+        .reaper_rate(Duration::from_secs(1))
+        .build(Handler(AtomicIsize::new(5)))
+        .unwrap();
+    for _ in 0..8 {
+        thread::sleep(Duration::from_millis(250));
+        pool.get().unwrap();
+    }
+    assert_eq!(4, DROPPED.load(Ordering::SeqCst));
+    assert_eq!(1, pool.state().connections);
+}
+
+#[test]
 fn test_max_lifetime() {
     static DROPPED: AtomicUsize = ATOMIC_USIZE_INIT;
 
