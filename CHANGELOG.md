@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.8.3] - 2018-11-03
+
+### Fixed
+
+* The set of idle connections is now treated as a stack rather than a queue. The old behavior
+    interacted poorly with configurations that allowed the pool size to shrink when mostly idle.
+
 ## [0.8.2] - 2017-12-24
 
 ### Changed
@@ -78,7 +85,8 @@
 
 Look at the [release tags] for information about older releases.
 
-[Unreleased]: https://github.com/sfackler/r2d2/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/sfackler/r2d2/compare/v0.8.3...HEAD
+[0.8.3]: https://github.com/sfackler/r2d2/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/sfackler/r2d2/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/sfackler/r2d2/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/sfackler/r2d2/compare/v0.7.4...v0.8.0
