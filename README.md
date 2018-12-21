@@ -20,6 +20,7 @@ Backend                                                                | Adaptor
 ---------------------------------------------------------------------- | -------------
 [rust-postgres](https://github.com/sfackler/rust-postgres)             | [r2d2-postgres](https://github.com/sfackler/r2d2-postgres)
 [redis-rs](https://github.com/mitsuhiko/redis-rs)                      | [r2d2-redis](https://github.com/nevdelap/r2d2-redis)
+[rust-memcache](https://github.com/aisk/rust-memcache)                 | [r2d2-memcache](https://github.com/megumish/r2d2-memcache)
 [rust-mysql-simple](https://github.com/blackbeam/rust-mysql-simple)    | [r2d2-mysql](https://github.com/outersky/r2d2-mysql)
 [rusqlite](https://github.com/jgallagher/rusqlite)                     | [r2d2-sqlite](https://github.com/ivanceras/r2d2-sqlite)
 [rusted-cypher](https://github.com/livioribeiro/rusted-cypher)         | [r2d2-cypher](https://github.com/flosse/r2d2-cypher)
