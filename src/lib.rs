@@ -50,6 +50,7 @@ use std::error;
 use std::fmt;
 use std::mem;
 use std::ops::{Deref, DerefMut};
+use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -174,6 +175,13 @@ where
     internals: Mutex<PoolInternals<M::Connection>>,
     cond: Condvar,
 }
+
+// Condvar isn't UnwindSafe, but our pool is. The only thing you could do
+// with it which causes problems in the face of unwinding is check out a
+// connection. Since we do not check a connection back into the pool if it
+// is dropped during a panic, we can safely implement UnwindSafe.
+impl<M: ManageConnection + UnwindSafe> UnwindSafe for SharedPool<M> {}
+impl<M: ManageConnection + RefUnwindSafe> RefUnwindSafe for SharedPool<M> {}
 
 fn drop_conns<M>(
     shared: &Arc<SharedPool<M>>,
@@ -466,6 +474,11 @@ where
         }
     }
 
+    fn drop_conn(&self, conn: Conn<M::Connection>) {
+        let internals = self.0.internals.lock();
+        drop_conns(&self.0, internals, vec![conn.conn]);
+    }
+
     /// Returns information about the current state of the pool.
     pub fn state(&self) -> State {
         let internals = self.0.internals.lock();
@@ -569,7 +582,13 @@ where
     M: ManageConnection,
 {
     fn drop(&mut self) {
-        self.pool.put_back(self.conn.take().unwrap());
+        use std::thread::panicking;
+
+        if panicking() {
+            self.pool.drop_conn(self.conn.take().unwrap());
+        } else {
+            self.pool.put_back(self.conn.take().unwrap());
+        }
     }
 }
 

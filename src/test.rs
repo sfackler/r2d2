@@ -1,4 +1,5 @@
 use antidote::Mutex;
+use std::panic::catch_unwind;
 use std::sync::atomic::{
     AtomicBool, AtomicIsize, AtomicUsize, Ordering, ATOMIC_BOOL_INIT, ATOMIC_USIZE_INIT,
 };
@@ -544,4 +545,52 @@ fn conns_drop_on_pool_drop() {
         thread::sleep(Duration::from_secs(1));
     }
     panic!("timed out waiting for connections to drop");
+}
+
+#[test]
+fn connections_are_not_returned_to_pool_on_panic() {
+    static DROPPED: AtomicUsize = ATOMIC_USIZE_INIT;
+
+    struct Connection;
+
+    impl Drop for Connection {
+        fn drop(&mut self) {
+            DROPPED.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    struct Handler;
+
+    impl ManageConnection for Handler {
+        type Connection = Connection;
+        type Error = Error;
+
+        fn connect(&self) -> Result<Connection, Error> {
+            Ok(Connection)
+        }
+
+        fn is_valid(&self, _: &mut Connection) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn has_broken(&self, _: &mut Connection) -> bool {
+            false
+        }
+    }
+
+    let pool = Pool::builder()
+        .max_lifetime(Some(Duration::from_secs(1)))
+        .max_size(10)
+        .min_idle(Some(0))
+        .build(Handler)
+        .unwrap();
+
+    let _ = catch_unwind(|| {
+        let _conn = pool.get().unwrap();
+        panic!();
+    });
+
+    assert_eq!(DROPPED.load(Ordering::SeqCst), 1);
+    assert_eq!(pool.state().connections, 0);
+    assert_eq!(pool.state().idle_connections, 0);
 }
