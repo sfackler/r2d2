@@ -7,7 +7,7 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::time::Duration;
 use std::{error, fmt, mem, thread};
 
-use {CustomizeConnection, ManageConnection, Pool};
+use {CustomizeConnection, ManageConnection, Pool, PooledConnection};
 
 #[derive(Debug)]
 pub struct Error;
@@ -548,7 +548,7 @@ fn conns_drop_on_pool_drop() {
 }
 
 #[test]
-fn connections_are_not_returned_to_pool_on_panic() {
+fn connections_can_be_configured_to_not_return_to_pool_on_drop() {
     static DROPPED: AtomicUsize = ATOMIC_USIZE_INIT;
 
     struct Connection;
@@ -576,6 +576,13 @@ fn connections_are_not_returned_to_pool_on_panic() {
         fn has_broken(&self, _: &mut Connection) -> bool {
             false
         }
+
+        fn before_return(&self, conn: &mut PooledConnection<Self>) {
+            use std::thread::panicking;
+            if panicking() {
+                conn.remove_from_pool();
+            }
+        }
     }
 
     let pool = Pool::builder()
@@ -593,4 +600,25 @@ fn connections_are_not_returned_to_pool_on_panic() {
     assert_eq!(DROPPED.load(Ordering::SeqCst), 1);
     assert_eq!(pool.state().connections, 0);
     assert_eq!(pool.state().idle_connections, 0);
+}
+
+#[test]
+fn pooled_conn_into_inner_removes_from_pool() {
+    let pool = Pool::builder()
+        .connection_timeout(Duration::from_millis(50))
+        .max_size(2)
+        .build(OkManager)
+        .unwrap();
+
+    let conn1 = pool.get();
+    let conn2 = pool.get();
+    let conn3 = pool.get();
+
+    assert!(conn1.is_ok());
+    assert!(conn2.is_ok());
+    assert!(conn3.is_err());
+
+    conn1.unwrap().into_inner();
+
+    assert!(pool.get().is_ok());
 }
