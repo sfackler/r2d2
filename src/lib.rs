@@ -187,8 +187,9 @@ where
 
 // Condvar isn't UnwindSafe, but our pool is. The only thing you could do
 // with it which causes problems in the face of unwinding is check out a
-// connection. Since we do not check a connection back into the pool if it
-// is dropped during a panic, we can safely implement UnwindSafe.
+// connection. We assume that any `ManageConnection` which is unwind safe
+// will override `before_return` to restore broken invariants, or remove
+// connections from the pool, so we can safely implement `UnwindSafe`
 impl<M: ManageConnection + UnwindSafe> UnwindSafe for SharedPool<M> {}
 impl<M: ManageConnection + RefUnwindSafe> RefUnwindSafe for SharedPool<M> {}
 
