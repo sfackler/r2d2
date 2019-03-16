@@ -389,7 +389,15 @@ where
     /// Waits for at most the configured connection timeout before returning an
     /// error.
     pub fn get(&self) -> Result<PooledConnection<M>, Error> {
-        let end = Instant::now() + self.0.config.connection_timeout;
+        self.get_timeout(self.0.config.connection_timeout)
+    }
+
+    /// Retrieves a connection from the pool, waiting for at most `timeout`
+    ///
+    /// The given timeout will be used instead of the configured connection
+    /// timeout.
+    pub fn get_timeout(&self, timeout: Duration) -> Result<PooledConnection<M>, Error> {
+        let start = Instant::now();
         let mut internals = self.0.internals.lock();
 
         loop {
@@ -400,11 +408,12 @@ where
 
             add_connection(&self.0, &mut internals);
 
-            let now = Instant::now();
-            if now >= end {
-                return Err(Error(internals.last_error.take()));
+            match timeout.checked_sub(start.elapsed()) {
+                Some(remaining) => {
+                    internals = self.0.cond.wait_timeout(internals, remaining).0;
+                }
+                None => return Err(Error(internals.last_error.take())),
             }
-            internals = self.0.cond.wait_timeout(internals, end - now).0;
         }
     }
 

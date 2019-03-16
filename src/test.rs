@@ -3,7 +3,7 @@ use std::sync::atomic::{
     AtomicBool, AtomicIsize, AtomicUsize, Ordering, ATOMIC_BOOL_INIT, ATOMIC_USIZE_INIT,
 };
 use std::sync::mpsc::{self, Receiver, SyncSender};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{error, fmt, mem, thread};
 
 use {CustomizeConnection, ManageConnection, Pool};
@@ -109,6 +109,36 @@ fn try_get() {
     drop(conn1);
 
     assert!(pool.try_get().is_some());
+}
+
+#[test]
+fn get_timeout() {
+    let pool = Pool::builder()
+        .max_size(1)
+        .connection_timeout(Duration::from_millis(500))
+        .build(OkManager)
+        .unwrap();
+
+    let timeout = Duration::from_millis(100);
+    let succeeds_immediately = pool.get_timeout(timeout);
+
+    assert!(succeeds_immediately.is_ok());
+
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(50));
+        drop(succeeds_immediately);
+    });
+
+    let succeeds_delayed = pool.get_timeout(timeout);
+    assert!(succeeds_delayed.is_ok());
+
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(150));
+        drop(succeeds_delayed);
+    });
+
+    let fails = pool.get_timeout(timeout);
+    assert!(fails.is_err());
 }
 
 #[test]
@@ -235,14 +265,18 @@ fn test_lazy_initialization_failure() {
 }
 
 #[test]
-fn test_get_timeout() {
+fn test_get_global_timeout() {
     let pool = Pool::builder()
         .max_size(1)
         .connection_timeout(Duration::from_secs(1))
         .build(OkManager)
         .unwrap();
     let _c = pool.get().unwrap();
+    let started_waiting = Instant::now();
     pool.get().err().unwrap();
+    // Elapsed time won't be *exactly* 1 second, but it will certainly be
+    // less than 2 seconds
+    assert_eq!(started_waiting.elapsed().as_secs(), 1);
 }
 
 #[test]
