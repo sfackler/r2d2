@@ -60,7 +60,7 @@ where
             error_handler: Box::new(LoggingErrorHandler),
             connection_customizer: Box::new(NopConnectionCustomizer),
             thread_pool: None,
-            reaper_rate: Duration::from_secs(30),
+            reaper_rate: Duration::from_secs(1),
             _p: PhantomData,
         }
     }
