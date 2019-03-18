@@ -188,6 +188,7 @@ fn drop_conns<M>(
     drop(internals); // make sure we run connection destructors without this locked
 
     for conn in conns {
+        info!("Dropping connection...");
         shared.config.connection_customizer.on_release(conn);
     }
 }
@@ -200,6 +201,9 @@ fn establish_idle_connections<M>(
 {
     let min = shared.config.min_idle.unwrap_or(shared.config.max_size);
     let idle = internals.conns.len() as u32;
+    if min > idle {
+        info!("Establishing idle connections... ({})", min - idle);
+    }
     for _ in idle..min {
         add_connection(shared, internals);
     }
@@ -210,8 +214,10 @@ where
     M: ManageConnection,
 {
     if internals.num_conns + internals.pending_conns >= shared.config.max_size {
+        warn!("No available connections, but connection pool is at maximum size ({}).", shared.config.max_size);
         return;
     }
+    info!("Requesting a new connection...");
 
     internals.pending_conns += 1;
     inner(Duration::from_secs(0), shared);
@@ -227,6 +233,7 @@ where
                 None => return,
             };
 
+            info!("Establishing a new connection...");
             let conn = shared.manager.connect().and_then(|mut conn| {
                 shared
                     .config
@@ -236,6 +243,7 @@ where
             });
             match conn {
                 Ok(conn) => {
+                    info!("Successfully established a new connection.");
                     let mut internals = shared.internals.lock();
                     internals.last_error = None;
                     let now = Instant::now();
@@ -252,10 +260,12 @@ where
                     shared.cond.notify_one();
                 }
                 Err(err) => {
+                    error!("Failed to establish new connection: {}", err);
                     shared.internals.lock().last_error = Some(err.to_string());
                     shared.config.error_handler.handle_error(err);
                     let delay = cmp::max(Duration::from_millis(200), delay);
                     let delay = cmp::min(shared.config.connection_timeout / 2, delay * 2);
+                    info!("Retrying connection after {:?}...", delay);
                     inner(delay, &shared);
                 }
             }
@@ -287,6 +297,7 @@ where
             reap |= now - conn.conn.birth >= lifetime;
         }
         if reap {
+            info!("Reaping connection... (idle_timeout={:?}, lifetime={:?})", now - conn.idle_start, now - conn.conn.birth);
             to_drop.push(conn.conn.conn);
         } else {
             internals.conns.push(conn);
@@ -440,9 +451,12 @@ where
                     }
                 }
 
+                info!("Yielded a connection from the pool.");
+
                 return Ok(PooledConnection {
                     pool: self.clone(),
                     conn: Some(conn.conn),
+                    leased_at: Instant::now(),
                 });
             } else {
                 return Err(internals);
@@ -457,8 +471,10 @@ where
 
         let mut internals = self.0.internals.lock();
         if broken {
+            warn!("Tried to return a broken connection to the pool, dropping instead.");
             drop_conns(&self.0, internals, vec![conn.conn]);
         } else {
+            info!("Connection successfully returned to the pool.");
             let conn = IdleConn {
                 conn: conn,
                 idle_start: Instant::now(),
@@ -554,6 +570,7 @@ where
 {
     pool: Pool<M>,
     conn: Option<Conn<M::Connection>>,
+    leased_at: Instant,
 }
 
 impl<M> fmt::Debug for PooledConnection<M>
@@ -571,6 +588,7 @@ where
     M: ManageConnection,
 {
     fn drop(&mut self) {
+        info!("Returning connection (lease_time={:?})", Instant::now() - self.leased_at);
         self.pool.put_back(self.conn.take().unwrap());
     }
 }
