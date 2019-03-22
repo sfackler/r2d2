@@ -50,6 +50,7 @@ use std::error;
 use std::fmt;
 use std::mem;
 use std::ops::{Deref, DerefMut};
+use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -62,7 +63,7 @@ mod config;
 mod test;
 
 /// A trait which provides connection-specific functionality.
-pub trait ManageConnection: Send + Sync + 'static {
+pub trait ManageConnection: Sized + Send + Sync + 'static {
     /// The connection type this manager deals with.
     type Connection: Send + 'static;
 
@@ -88,6 +89,14 @@ pub trait ManageConnection: Send + Sync + 'static {
     /// has disconnected. Implementations that do not support this kind of
     /// fast health check may simply return `false`.
     fn has_broken(&self, conn: &mut Self::Connection) -> bool;
+
+    /// A hook that is called before returning a connection to the pool
+    ///
+    /// This hook can be overidden to clean up a connection's state, or to
+    /// remove a connection from the pool if it was dropped during a panic.
+    /// This function will always be called from the same thread the pooled
+    /// connection was dropped from.
+    fn before_return(&self, _conn: &mut PooledConnection<Self>) {}
 }
 
 /// A trait which handles errors reported by the `ManageConnection`.
@@ -151,6 +160,7 @@ impl<C, E> CustomizeConnection<C, E> for NopConnectionCustomizer {}
 struct Conn<C> {
     conn: C,
     birth: Instant,
+    should_be_returned: bool,
 }
 
 struct IdleConn<C> {
@@ -175,19 +185,38 @@ where
     cond: Condvar,
 }
 
-fn drop_conns<M>(
+// Condvar isn't UnwindSafe, but our pool is. The only thing you could do
+// with it which causes problems in the face of unwinding is check out a
+// connection. We assume that any `ManageConnection` which is unwind safe
+// will override `before_return` to restore broken invariants, or remove
+// connections from the pool, so we can safely implement `UnwindSafe`
+impl<M: ManageConnection + UnwindSafe> UnwindSafe for SharedPool<M> {}
+impl<M: ManageConnection + RefUnwindSafe> RefUnwindSafe for SharedPool<M> {}
+
+fn forget_conns<M>(
     shared: &Arc<SharedPool<M>>,
     mut internals: MutexGuard<PoolInternals<M::Connection>>,
-    conns: Vec<M::Connection>,
+    conns: &mut [Conn<M::Connection>],
 ) where
     M: ManageConnection,
 {
     internals.num_conns -= conns.len() as u32;
     establish_idle_connections(shared, &mut internals);
-    drop(internals); // make sure we run connection destructors without this locked
-
     for conn in conns {
-        shared.config.connection_customizer.on_release(conn);
+        conn.should_be_returned = false;
+    }
+}
+
+fn drop_conns<M>(
+    shared: &Arc<SharedPool<M>>,
+    internals: MutexGuard<PoolInternals<M::Connection>>,
+    mut conns: Vec<Conn<M::Connection>>,
+) where
+    M: ManageConnection,
+{
+    forget_conns(shared, internals, &mut conns);
+    for conn in conns {
+        shared.config.connection_customizer.on_release(conn.conn);
     }
 }
 
@@ -242,6 +271,7 @@ where
                         conn: Conn {
                             conn: conn,
                             birth: now,
+                            should_be_returned: true,
                         },
                         idle_start: now,
                     };
@@ -286,7 +316,7 @@ where
             reap |= now - conn.conn.birth >= lifetime;
         }
         if reap {
-            to_drop.push(conn.conn.conn);
+            to_drop.push(conn.conn);
         } else {
             internals.conns.push(conn);
         }
@@ -442,7 +472,7 @@ where
                         // FIXME we shouldn't have to lock, unlock, and relock here
                         internals = self.0.internals.lock();
                         internals.last_error = Some(msg);
-                        drop_conns(&self.0, internals, vec![conn.conn.conn]);
+                        drop_conns(&self.0, internals, vec![conn.conn]);
                         internals = self.0.internals.lock();
                         continue;
                     }
@@ -458,13 +488,21 @@ where
         }
     }
 
-    fn put_back(&self, mut conn: Conn<M::Connection>) {
+    fn put_back(&self, conn: &mut PooledConnection<M>) {
+        self.0.manager.before_return(conn);
+
+        let mut conn = match conn.conn.take() {
+            None => return,
+            Some(ref c) if !c.should_be_returned => return,
+            Some(c) => c,
+        };
+
         // This is specified to be fast, but call it before locking anyways
         let broken = self.0.manager.has_broken(&mut conn.conn);
 
         let mut internals = self.0.internals.lock();
         if broken {
-            drop_conns(&self.0, internals, vec![conn.conn]);
+            drop_conns(&self.0, internals, vec![conn]);
         } else {
             let conn = IdleConn {
                 conn: conn,
@@ -473,6 +511,13 @@ where
             internals.conns.push(conn);
             self.0.cond.notify_one();
         }
+    }
+
+    fn forget_conn(&self, conn: &mut Conn<M::Connection>) {
+        use std::slice;
+
+        let internals = self.0.internals.lock();
+        forget_conns(&self.0, internals, slice::from_mut(conn));
     }
 
     /// Returns information about the current state of the pool.
@@ -563,6 +608,34 @@ where
     conn: Option<Conn<M::Connection>>,
 }
 
+impl<M: ManageConnection> PooledConnection<M> {
+    /// Takes the inner connection, removing it from the pool
+    ///
+    /// See [`PooledConnection::remove_from_pool`] for details
+    pub fn into_inner(mut self) -> M::Connection {
+        self.remove_from_pool();
+        self.conn
+            .take()
+            .unwrap()
+            .conn
+    }
+
+    /// Removes this connection from the pool
+    ///
+    /// The connection can still be used afterwards, but it will never be
+    /// returned to the pool. If a connection customizer is set, its
+    /// `on_release` hook will not be called.
+    ///
+    /// The pool will establish a new connection to take its place. Care must
+    /// be taken when using this method to ensure you are not establishing an
+    /// unbounded number of connections.
+    pub fn remove_from_pool(&mut self) {
+        if let Some(ref mut conn) = self.conn {
+            self.pool.forget_conn(conn);
+        }
+    }
+}
+
 impl<M> fmt::Debug for PooledConnection<M>
 where
     M: ManageConnection,
@@ -578,7 +651,7 @@ where
     M: ManageConnection,
 {
     fn drop(&mut self) {
-        self.pool.put_back(self.conn.take().unwrap());
+        self.pool.clone().put_back(self)
     }
 }
 
