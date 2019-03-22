@@ -1,7 +1,7 @@
 version: 2
+
 jobs:
   build:
-    working_directory: ~/build
     docker:
       - image: rust:1.19.0
     steps:
