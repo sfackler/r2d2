@@ -39,12 +39,12 @@
 #![warn(missing_docs)]
 #![doc(html_root_url = "https://docs.rs/r2d2/0.8")]
 
-extern crate antidote;
 #[macro_use]
 extern crate log;
+extern crate parking_lot;
 extern crate scheduled_thread_pool;
 
-use antidote::{Condvar, Mutex, MutexGuard};
+use parking_lot::{Condvar, Mutex, MutexGuard};
 use std::cmp;
 use std::error;
 use std::fmt;
@@ -374,11 +374,9 @@ where
         let initial_size = self.0.config.min_idle.unwrap_or(self.0.config.max_size);
 
         while internals.num_conns != initial_size {
-            let now = Instant::now();
-            if now >= end {
+            if self.0.cond.wait_until(&mut internals, end).timed_out() {
                 return Err(Error(internals.last_error.take()));
             }
-            internals = self.0.cond.wait_timeout(internals, end - now).0;
         }
 
         Ok(())
@@ -397,7 +395,7 @@ where
     /// The given timeout will be used instead of the configured connection
     /// timeout.
     pub fn get_timeout(&self, timeout: Duration) -> Result<PooledConnection<M>, Error> {
-        let start = Instant::now();
+        let end = Instant::now() + timeout;
         let mut internals = self.0.internals.lock();
 
         loop {
@@ -408,11 +406,8 @@ where
 
             add_connection(&self.0, &mut internals);
 
-            match timeout.checked_sub(start.elapsed()) {
-                Some(remaining) => {
-                    internals = self.0.cond.wait_timeout(internals, remaining).0;
-                }
-                None => return Err(Error(internals.last_error.take())),
+            if self.0.cond.wait_until(&mut internals, end).timed_out() {
+                return Err(Error(internals.last_error.take()));
             }
         }
     }

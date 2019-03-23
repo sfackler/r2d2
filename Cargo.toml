@@ -9,6 +9,6 @@ readme = "README.md"
 keywords = ["database", "pool"]
 
 [dependencies]
-antidote = "1.0"
 log = "0.4"
+parking_lot = "0.7"
 scheduled-thread-pool = "0.2"

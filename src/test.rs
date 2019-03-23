@@ -1,4 +1,4 @@
-use antidote::Mutex;
+use parking_lot::Mutex;
 use std::sync::atomic::{
     AtomicBool, AtomicIsize, AtomicUsize, Ordering, ATOMIC_BOOL_INIT, ATOMIC_USIZE_INIT,
 };
