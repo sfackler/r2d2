@@ -5,8 +5,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use {
-    CustomizeConnection, Error, HandleError, LoggingErrorHandler, ManageConnection,
-    NopConnectionCustomizer, Pool,
+    CustomizeConnection, Error, HandleError, HandleEvent, LoggingErrorHandler, ManageConnection,
+    NopConnectionCustomizer, NopEventHandler, Pool,
 };
 
 /// A builder for a connection pool.
@@ -22,6 +22,7 @@ where
     connection_timeout: Duration,
     error_handler: Box<HandleError<M::Error>>,
     connection_customizer: Box<CustomizeConnection<M::Connection, M::Error>>,
+    event_handler: Box<HandleEvent>,
     thread_pool: Option<Arc<ScheduledThreadPool>>,
     reaper_rate: Duration,
     _p: PhantomData<M>,
@@ -40,6 +41,7 @@ where
             .field("idle_timeout", &self.idle_timeout)
             .field("connection_timeout", &self.connection_timeout)
             .field("error_handler", &self.error_handler)
+            .field("event_handler", &self.event_handler)
             .field("connection_customizer", &self.connection_customizer)
             .finish()
     }
@@ -58,6 +60,7 @@ where
             max_lifetime: Some(Duration::from_secs(30 * 60)),
             connection_timeout: Duration::from_secs(30),
             error_handler: Box::new(LoggingErrorHandler),
+            event_handler: Box::new(NopEventHandler),
             connection_customizer: Box::new(NopConnectionCustomizer),
             thread_pool: None,
             reaper_rate: Duration::from_secs(30),
@@ -187,6 +190,14 @@ where
         self
     }
 
+    /// Sets the handler for events reported by the pool.
+    ///
+    /// Defaults to the `NopEventHandler`.
+    pub fn event_handler(mut self, event_handler: Box<HandleEvent>) -> Builder<M> {
+        self.event_handler = event_handler;
+        self
+    }
+
     /// Sets the connection customizer used by the pool.
     ///
     /// Defaults to the `NopConnectionCustomizer`.
@@ -253,6 +264,7 @@ where
             idle_timeout: self.idle_timeout,
             connection_timeout: self.connection_timeout,
             error_handler: self.error_handler,
+            event_handler: self.event_handler,
             connection_customizer: self.connection_customizer,
             thread_pool: thread_pool,
         };
@@ -269,6 +281,7 @@ pub struct Config<C, E> {
     pub idle_timeout: Option<Duration>,
     pub connection_timeout: Duration,
     pub error_handler: Box<HandleError<E>>,
+    pub event_handler: Box<HandleEvent>,
     pub connection_customizer: Box<CustomizeConnection<C, E>>,
     pub thread_pool: Arc<ScheduledThreadPool>,
 }
@@ -284,6 +297,7 @@ impl<C, E> fmt::Debug for Config<C, E> {
             .field("idle_timeout", &self.idle_timeout)
             .field("connection_timeout", &self.connection_timeout)
             .field("error_handler", &self.error_handler)
+            .field("event_handler", &self.event_handler)
             .field("connection_customizer", &self.connection_customizer)
             .finish()
     }
