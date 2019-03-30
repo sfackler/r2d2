@@ -42,29 +42,53 @@ impl HandleEvent for NopEventHandler {}
 
 /// Information about an acquire event.
 #[derive(Debug)]
-pub struct AcquireEvent(pub(crate) ());
+pub struct AcquireEvent {
+    pub(crate) id: u64,
+}
+
+impl AcquireEvent {
+    /// Returns the ID of the connection.
+    #[inline]
+    pub fn connection_id(&self) -> u64 {
+        self.id
+    }
+}
 
 /// Information about a release event.
 #[derive(Debug)]
 pub struct ReleaseEvent {
-    pub(crate) lifetime: Duration,
+    pub(crate) id: u64,
+    pub(crate) age: Duration,
 }
 
 impl ReleaseEvent {
-    /// Returns the amount of time the connection was alive.
+    /// Returns the ID of the connection.
     #[inline]
-    pub fn lifetime(&self) -> Duration {
-        self.lifetime
+    pub fn connection_id(&self) -> u64 {
+        self.id
+    }
+
+    /// Returns the age of the connection.
+    #[inline]
+    pub fn age(&self) -> Duration {
+        self.age
     }
 }
 
 /// Information about a checkout event.
 #[derive(Debug)]
 pub struct CheckoutEvent {
+    pub(crate) id: u64,
     pub(crate) duration: Duration,
 }
 
 impl CheckoutEvent {
+    /// Returns the ID of the connection.
+    #[inline]
+    pub fn connection_id(&self) -> u64 {
+        self.id
+    }
+
     /// Returns the time taken to check out the connection.
     #[inline]
     pub fn duration(&self) -> Duration {
@@ -89,10 +113,17 @@ impl TimeoutEvent {
 /// Information about a checkin event.
 #[derive(Debug)]
 pub struct CheckinEvent {
+    pub(crate) id: u64,
     pub(crate) duration: Duration,
 }
 
 impl CheckinEvent {
+    /// Returns the ID of the connection.
+    #[inline]
+    pub fn connection_id(&self) -> u64 {
+        self.id
+    }
+
     /// Returns the amount of time the connection was checked out.
     #[inline]
     pub fn duration(&self) -> Duration {

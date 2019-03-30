@@ -50,6 +50,7 @@ use std::error;
 use std::fmt;
 use std::mem;
 use std::ops::{Deref, DerefMut};
+use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -63,6 +64,8 @@ pub mod event;
 
 #[cfg(test)]
 mod test;
+
+static CONNECTION_ID: AtomicUsize = ATOMIC_USIZE_INIT;
 
 /// A trait which provides connection-specific functionality.
 pub trait ManageConnection: Send + Sync + 'static {
@@ -154,6 +157,7 @@ impl<C, E> CustomizeConnection<C, E> for NopConnectionCustomizer {}
 struct Conn<C> {
     conn: C,
     birth: Instant,
+    id: u64,
 }
 
 struct IdleConn<C> {
@@ -191,7 +195,8 @@ fn drop_conns<M>(
 
     for conn in conns {
         let event = ReleaseEvent {
-            lifetime: conn.birth.elapsed(),
+            id: conn.id,
+            age: conn.birth.elapsed(),
         };
         shared.config.event_handler.handle_release(event);
         shared.config.connection_customizer.on_release(conn.conn);
@@ -242,7 +247,9 @@ where
             });
             match conn {
                 Ok(conn) => {
-                    let event = AcquireEvent(());
+                    let id = CONNECTION_ID.fetch_add(1, Ordering::Relaxed) as u64;
+
+                    let event = AcquireEvent { id };
                     shared.config.event_handler.handle_acquire(event);
 
                     let mut internals = shared.internals.lock();
@@ -250,8 +257,9 @@ where
                     let now = Instant::now();
                     let conn = IdleConn {
                         conn: Conn {
-                            conn: conn,
+                            conn,
                             birth: now,
+                            id,
                         },
                         idle_start: now,
                     };
@@ -415,6 +423,7 @@ where
             match self.try_get_inner(internals) {
                 Ok(conn) => {
                     let event = CheckoutEvent {
+                        id: conn.conn.as_ref().unwrap().id,
                         duration: start.elapsed(),
                     };
                     self.0.config.event_handler.handle_checkout(event);
@@ -478,6 +487,7 @@ where
 
     fn put_back(&self, checkout: Instant, mut conn: Conn<M::Connection>) {
         let event = CheckinEvent {
+            id: conn.id,
             duration: checkout.elapsed(),
         };
         self.0.config.event_handler.handle_checkin(event);
