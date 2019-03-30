@@ -3,10 +3,12 @@ use std::sync::atomic::{
     AtomicBool, AtomicIsize, AtomicUsize, Ordering, ATOMIC_BOOL_INIT, ATOMIC_USIZE_INIT,
 };
 use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{error, fmt, mem, thread};
 
-use {CustomizeConnection, ManageConnection, Pool};
+use event::{AcquireEvent, CheckinEvent, CheckoutEvent, ReleaseEvent, TimeoutEvent};
+use {CustomizeConnection, HandleEvent, ManageConnection, Pool};
 
 #[derive(Debug)]
 pub struct Error;
@@ -578,4 +580,131 @@ fn conns_drop_on_pool_drop() {
         thread::sleep(Duration::from_secs(1));
     }
     panic!("timed out waiting for connections to drop");
+}
+
+#[test]
+fn events() {
+    #[derive(Debug)]
+    enum Event {
+        Acquire(AcquireEvent),
+        Release(ReleaseEvent),
+        Checkout(CheckoutEvent),
+        Checkin(CheckinEvent),
+        Timeout(TimeoutEvent),
+    }
+
+    #[derive(Debug)]
+    struct TestEventHandler(Arc<Mutex<Vec<Event>>>);
+
+    impl HandleEvent for TestEventHandler {
+        fn handle_acquire(&self, event: AcquireEvent) {
+            self.0.lock().push(Event::Acquire(event));
+        }
+
+        fn handle_release(&self, event: ReleaseEvent) {
+            self.0.lock().push(Event::Release(event));
+        }
+
+        fn handle_checkout(&self, event: CheckoutEvent) {
+            self.0.lock().push(Event::Checkout(event));
+        }
+
+        fn handle_timeout(&self, event: TimeoutEvent) {
+            self.0.lock().push(Event::Timeout(event));
+        }
+
+        fn handle_checkin(&self, event: CheckinEvent) {
+            self.0.lock().push(Event::Checkin(event));
+        }
+    }
+
+    struct TestConnection;
+
+    struct TestConnectionManager;
+
+    impl ManageConnection for TestConnectionManager {
+        type Connection = TestConnection;
+        type Error = Error;
+
+        fn connect(&self) -> Result<TestConnection, Error> {
+            Ok(TestConnection)
+        }
+
+        fn is_valid(&self, _: &mut TestConnection) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn has_broken(&self, _: &mut TestConnection) -> bool {
+            true
+        }
+    }
+
+    let events = Arc::new(Mutex::new(vec![]));
+
+    let creation = Instant::now();
+    let pool = Pool::builder()
+        .max_size(1)
+        .connection_timeout(Duration::from_millis(250))
+        .event_handler(Box::new(TestEventHandler(events.clone())))
+        .build(TestConnectionManager)
+        .unwrap();
+
+    let start = Instant::now();
+    let conn = pool.get().unwrap();
+    let checkout = start.elapsed();
+
+    pool.get_timeout(Duration::from_millis(123)).err().unwrap();
+
+    drop(conn);
+    let checkin = start.elapsed();
+    let release = creation.elapsed();
+
+    let _conn2 = pool.get().unwrap();
+
+    let events = events.lock();
+
+    let id = match events[0] {
+        Event::Acquire(ref event) => event.connection_id(),
+        _ => unreachable!(),
+    };
+
+    match events[1] {
+        Event::Checkout(ref event) => {
+            assert_eq!(event.connection_id(), id);
+            assert!(event.duration() <= checkout);
+        }
+        _ => unreachable!(),
+    }
+
+    match events[2] {
+        Event::Timeout(ref event) => assert_eq!(event.timeout(), Duration::from_millis(123)),
+        _ => unreachable!(),
+    }
+
+    match events[3] {
+        Event::Checkin(ref event) => {
+            assert_eq!(event.connection_id(), id);
+            assert!(event.duration() <= checkin);
+        }
+        _ => unreachable!(),
+    }
+
+    match events[4] {
+        Event::Release(ref event) => {
+            assert_eq!(event.connection_id(), id);
+            assert!(event.age() <= release);
+        }
+        _ => unreachable!(),
+    }
+
+    let id2 = match events[5] {
+        Event::Acquire(ref event) => event.connection_id(),
+        _ => unreachable!(),
+    };
+    assert!(id < id2);
+
+    match events[6] {
+        Event::Checkout(ref event) => assert_eq!(event.connection_id(), id2),
+        _ => unreachable!(),
+    }
 }
