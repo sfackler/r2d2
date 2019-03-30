@@ -50,16 +50,22 @@ use std::error;
 use std::fmt;
 use std::mem;
 use std::ops::{Deref, DerefMut};
+use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 pub use config::Builder;
 use config::Config;
+use event::{AcquireEvent, CheckinEvent, CheckoutEvent, ReleaseEvent, TimeoutEvent};
+pub use event::{HandleEvent, NopEventHandler};
 
 mod config;
+pub mod event;
 
 #[cfg(test)]
 mod test;
+
+static CONNECTION_ID: AtomicUsize = ATOMIC_USIZE_INIT;
 
 /// A trait which provides connection-specific functionality.
 pub trait ManageConnection: Send + Sync + 'static {
@@ -151,6 +157,7 @@ impl<C, E> CustomizeConnection<C, E> for NopConnectionCustomizer {}
 struct Conn<C> {
     conn: C,
     birth: Instant,
+    id: u64,
 }
 
 struct IdleConn<C> {
@@ -178,7 +185,7 @@ where
 fn drop_conns<M>(
     shared: &Arc<SharedPool<M>>,
     mut internals: MutexGuard<PoolInternals<M::Connection>>,
-    conns: Vec<M::Connection>,
+    conns: Vec<Conn<M::Connection>>,
 ) where
     M: ManageConnection,
 {
@@ -187,7 +194,12 @@ fn drop_conns<M>(
     drop(internals); // make sure we run connection destructors without this locked
 
     for conn in conns {
-        shared.config.connection_customizer.on_release(conn);
+        let event = ReleaseEvent {
+            id: conn.id,
+            age: conn.birth.elapsed(),
+        };
+        shared.config.event_handler.handle_release(event);
+        shared.config.connection_customizer.on_release(conn.conn);
     }
 }
 
@@ -235,13 +247,19 @@ where
             });
             match conn {
                 Ok(conn) => {
+                    let id = CONNECTION_ID.fetch_add(1, Ordering::Relaxed) as u64;
+
+                    let event = AcquireEvent { id };
+                    shared.config.event_handler.handle_acquire(event);
+
                     let mut internals = shared.internals.lock();
                     internals.last_error = None;
                     let now = Instant::now();
                     let conn = IdleConn {
                         conn: Conn {
-                            conn: conn,
+                            conn,
                             birth: now,
+                            id,
                         },
                         idle_start: now,
                     };
@@ -286,7 +304,7 @@ where
             reap |= now - conn.conn.birth >= lifetime;
         }
         if reap {
-            to_drop.push(conn.conn.conn);
+            to_drop.push(conn.conn);
         } else {
             internals.conns.push(conn);
         }
@@ -295,7 +313,9 @@ where
 }
 
 /// A generic connection pool.
-pub struct Pool<M: ManageConnection>(Arc<SharedPool<M>>);
+pub struct Pool<M>(Arc<SharedPool<M>>)
+where
+    M: ManageConnection;
 
 /// Returns a new `Pool` referencing the same state as `self`.
 impl<M> Clone for Pool<M>
@@ -395,18 +415,29 @@ where
     /// The given timeout will be used instead of the configured connection
     /// timeout.
     pub fn get_timeout(&self, timeout: Duration) -> Result<PooledConnection<M>, Error> {
-        let end = Instant::now() + timeout;
+        let start = Instant::now();
+        let end = start + timeout;
         let mut internals = self.0.internals.lock();
 
         loop {
             match self.try_get_inner(internals) {
-                Ok(conn) => return Ok(conn),
+                Ok(conn) => {
+                    let event = CheckoutEvent {
+                        id: conn.conn.as_ref().unwrap().id,
+                        duration: start.elapsed(),
+                    };
+                    self.0.config.event_handler.handle_checkout(event);
+                    return Ok(conn);
+                }
                 Err(i) => internals = i,
             }
 
             add_connection(&self.0, &mut internals);
 
             if self.0.cond.wait_until(&mut internals, end).timed_out() {
+                let event = TimeoutEvent { timeout };
+                self.0.config.event_handler.handle_timeout(event);
+
                 return Err(Error(internals.last_error.take()));
             }
         }
@@ -437,7 +468,7 @@ where
                         // FIXME we shouldn't have to lock, unlock, and relock here
                         internals = self.0.internals.lock();
                         internals.last_error = Some(msg);
-                        drop_conns(&self.0, internals, vec![conn.conn.conn]);
+                        drop_conns(&self.0, internals, vec![conn.conn]);
                         internals = self.0.internals.lock();
                         continue;
                     }
@@ -445,6 +476,7 @@ where
 
                 return Ok(PooledConnection {
                     pool: self.clone(),
+                    checkout: Instant::now(),
                     conn: Some(conn.conn),
                 });
             } else {
@@ -453,13 +485,19 @@ where
         }
     }
 
-    fn put_back(&self, mut conn: Conn<M::Connection>) {
+    fn put_back(&self, checkout: Instant, mut conn: Conn<M::Connection>) {
+        let event = CheckinEvent {
+            id: conn.id,
+            duration: checkout.elapsed(),
+        };
+        self.0.config.event_handler.handle_checkin(event);
+
         // This is specified to be fast, but call it before locking anyways
         let broken = self.0.manager.has_broken(&mut conn.conn);
 
         let mut internals = self.0.internals.lock();
         if broken {
-            drop_conns(&self.0, internals, vec![conn.conn]);
+            drop_conns(&self.0, internals, vec![conn]);
         } else {
             let conn = IdleConn {
                 conn: conn,
@@ -555,6 +593,7 @@ where
     M: ManageConnection,
 {
     pool: Pool<M>,
+    checkout: Instant,
     conn: Option<Conn<M::Connection>>,
 }
 
@@ -573,7 +612,7 @@ where
     M: ManageConnection,
 {
     fn drop(&mut self) {
-        self.pool.put_back(self.conn.take().unwrap());
+        self.pool.put_back(self.checkout, self.conn.take().unwrap());
     }
 }
 
