@@ -50,7 +50,7 @@ use std::error;
 use std::fmt;
 use std::mem;
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -65,7 +65,7 @@ pub mod event;
 #[cfg(test)]
 mod test;
 
-static CONNECTION_ID: AtomicUsize = ATOMIC_USIZE_INIT;
+static CONNECTION_ID: AtomicUsize = AtomicUsize::new(0);
 
 /// A trait which provides connection-specific functionality.
 pub trait ManageConnection: Send + Sync + 'static {
