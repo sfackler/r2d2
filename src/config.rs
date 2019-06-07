@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use std::time::Duration;
 
-use {
+use crate::{
     CustomizeConnection, Error, HandleError, HandleEvent, LoggingErrorHandler, ManageConnection,
     NopConnectionCustomizer, NopEventHandler, Pool,
 };
@@ -20,9 +20,9 @@ where
     max_lifetime: Option<Duration>,
     idle_timeout: Option<Duration>,
     connection_timeout: Duration,
-    error_handler: Box<HandleError<M::Error>>,
-    connection_customizer: Box<CustomizeConnection<M::Connection, M::Error>>,
-    event_handler: Box<HandleEvent>,
+    error_handler: Box<dyn HandleError<M::Error>>,
+    connection_customizer: Box<dyn CustomizeConnection<M::Connection, M::Error>>,
+    event_handler: Box<dyn HandleEvent>,
     thread_pool: Option<Arc<ScheduledThreadPool>>,
     reaper_rate: Duration,
     _p: PhantomData<M>,
@@ -136,10 +136,7 @@ where
     ///
     /// Panics if `max_lifetime` is the zero `Duration`.
     pub fn max_lifetime(mut self, max_lifetime: Option<Duration>) -> Builder<M> {
-        assert!(
-            max_lifetime != Some(Duration::from_secs(0)),
-            "max_lifetime must be positive"
-        );
+        assert_ne!(max_lifetime, Some(Duration::from_secs(0)), "max_lifetime must be positive");
         self.max_lifetime = max_lifetime;
         self
     }
@@ -155,10 +152,7 @@ where
     ///
     /// Panics if `idle_timeout` is the zero `Duration`.
     pub fn idle_timeout(mut self, idle_timeout: Option<Duration>) -> Builder<M> {
-        assert!(
-            idle_timeout != Some(Duration::from_secs(0)),
-            "idle_timeout must be positive"
-        );
+        assert_ne!(idle_timeout, Some(Duration::from_secs(0)), "idle_timeout must be positive");
         self.idle_timeout = idle_timeout;
         self
     }
@@ -185,7 +179,7 @@ where
     /// Sets the handler for errors reported in the pool.
     ///
     /// Defaults to the `LoggingErrorHandler`.
-    pub fn error_handler(mut self, error_handler: Box<HandleError<M::Error>>) -> Builder<M> {
+    pub fn error_handler(mut self, error_handler: Box<dyn HandleError<M::Error>>) -> Builder<M> {
         self.error_handler = error_handler;
         self
     }
@@ -193,7 +187,7 @@ where
     /// Sets the handler for events reported by the pool.
     ///
     /// Defaults to the `NopEventHandler`.
-    pub fn event_handler(mut self, event_handler: Box<HandleEvent>) -> Builder<M> {
+    pub fn event_handler(mut self, event_handler: Box<dyn HandleEvent>) -> Builder<M> {
         self.event_handler = event_handler;
         self
     }
@@ -203,7 +197,7 @@ where
     /// Defaults to the `NopConnectionCustomizer`.
     pub fn connection_customizer(
         mut self,
-        connection_customizer: Box<CustomizeConnection<M::Connection, M::Error>>,
+        connection_customizer: Box<dyn CustomizeConnection<M::Connection, M::Error>>,
     ) -> Builder<M> {
         self.connection_customizer = connection_customizer;
         self
@@ -266,7 +260,7 @@ where
             error_handler: self.error_handler,
             event_handler: self.event_handler,
             connection_customizer: self.connection_customizer,
-            thread_pool: thread_pool,
+            thread_pool,
         };
 
         Pool::new_inner(config, manager, self.reaper_rate)
@@ -280,9 +274,9 @@ pub struct Config<C, E> {
     pub max_lifetime: Option<Duration>,
     pub idle_timeout: Option<Duration>,
     pub connection_timeout: Duration,
-    pub error_handler: Box<HandleError<E>>,
-    pub event_handler: Box<HandleEvent>,
-    pub connection_customizer: Box<CustomizeConnection<C, E>>,
+    pub error_handler: Box<dyn HandleError<E>>,
+    pub event_handler: Box<dyn HandleEvent>,
+    pub connection_customizer: Box<dyn CustomizeConnection<C, E>>,
     pub thread_pool: Arc<ScheduledThreadPool>,
 }
 

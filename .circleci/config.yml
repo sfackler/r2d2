@@ -3,7 +3,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: rust:1.24.0
+      - image: rust:1.31.0
     steps:
       - checkout
       - restore_cache:
@@ -14,10 +14,10 @@ jobs:
           paths:
             - /usr/local/cargo/registry/index
       - restore_cache:
-          key: dependencies-1.24-{{ checksum "Cargo.lock" }}
+          key: dependencies-1.31-{{ checksum "Cargo.lock" }}
       - run: cargo test
       - save_cache:
-          key: dependencies-1.24-{{ checksum "Cargo.lock" }}
+          key: dependencies-1.31-{{ checksum "Cargo.lock" }}
           paths:
             - target
             - /usr/local/cargo/registry/cache

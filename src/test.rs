@@ -1,14 +1,12 @@
 use parking_lot::Mutex;
-use std::sync::atomic::{
-    AtomicBool, AtomicIsize, AtomicUsize, Ordering, ATOMIC_BOOL_INIT, ATOMIC_USIZE_INIT,
-};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{error, fmt, mem, thread};
 
-use event::{AcquireEvent, CheckinEvent, CheckoutEvent, ReleaseEvent, TimeoutEvent};
-use {CustomizeConnection, HandleEvent, ManageConnection, Pool};
+use crate::event::{AcquireEvent, CheckinEvent, CheckoutEvent, ReleaseEvent, TimeoutEvent};
+use crate::{CustomizeConnection, HandleEvent, ManageConnection, Pool};
 
 #[derive(Debug)]
 pub struct Error;
@@ -208,7 +206,7 @@ fn test_issue_2_unlocked_during_is_valid() {
 
 #[test]
 fn test_drop_on_broken() {
-    static DROPPED: AtomicBool = ATOMIC_BOOL_INIT;
+    static DROPPED: AtomicBool = AtomicBool::new(false);
     DROPPED.store(false, Ordering::SeqCst);
 
     struct Connection;
@@ -283,10 +281,10 @@ fn test_get_global_timeout() {
 
 #[test]
 fn test_connection_customizer() {
-    static RELEASED: AtomicBool = ATOMIC_BOOL_INIT;
+    static RELEASED: AtomicBool = AtomicBool::new(false);
     RELEASED.store(false, Ordering::SeqCst);
 
-    static DROPPED: AtomicBool = ATOMIC_BOOL_INIT;
+    static DROPPED: AtomicBool = AtomicBool::new(false);
     DROPPED.store(false, Ordering::SeqCst);
 
     struct Connection(i32);
@@ -350,7 +348,7 @@ fn test_connection_customizer() {
 
 #[test]
 fn test_idle_timeout() {
-    static DROPPED: AtomicUsize = ATOMIC_USIZE_INIT;
+    static DROPPED: AtomicUsize = AtomicUsize::new(0);
 
     struct Connection;
 
@@ -398,7 +396,7 @@ fn test_idle_timeout() {
 
 #[test]
 fn idle_timeout_partial_use() {
-    static DROPPED: AtomicUsize = ATOMIC_USIZE_INIT;
+    static DROPPED: AtomicUsize = AtomicUsize::new(0);
 
     struct Connection;
 
@@ -447,7 +445,7 @@ fn idle_timeout_partial_use() {
 
 #[test]
 fn test_max_lifetime() {
-    static DROPPED: AtomicUsize = ATOMIC_USIZE_INIT;
+    static DROPPED: AtomicUsize = AtomicUsize::new(0);
 
     struct Connection;
 
@@ -538,7 +536,7 @@ fn min_idle() {
 
 #[test]
 fn conns_drop_on_pool_drop() {
-    static DROPPED: AtomicUsize = ATOMIC_USIZE_INIT;
+    static DROPPED: AtomicUsize = AtomicUsize::new(0);
 
     struct Connection;
 

@@ -7,8 +7,9 @@ description = "A generic connection pool"
 repository = "https://github.com/sfackler/r2d2"
 readme = "README.md"
 keywords = ["database", "pool"]
+edition = "2018"
 
 [dependencies]
 log = "0.4"
-parking_lot = "0.7"
+parking_lot = "0.8"
 scheduled-thread-pool = "0.2"

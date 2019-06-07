@@ -39,10 +39,7 @@
 #![warn(missing_docs)]
 #![doc(html_root_url = "https://docs.rs/r2d2/0.8")]
 
-#[macro_use]
-extern crate log;
-extern crate parking_lot;
-extern crate scheduled_thread_pool;
+use log::error;
 
 use parking_lot::{Condvar, Mutex, MutexGuard};
 use std::cmp;
@@ -50,14 +47,14 @@ use std::error;
 use std::fmt;
 use std::mem;
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-pub use config::Builder;
-use config::Config;
-use event::{AcquireEvent, CheckinEvent, CheckoutEvent, ReleaseEvent, TimeoutEvent};
-pub use event::{HandleEvent, NopEventHandler};
+pub use crate::config::Builder;
+use crate::config::Config;
+use crate::event::{AcquireEvent, CheckinEvent, CheckoutEvent, ReleaseEvent, TimeoutEvent};
+pub use crate::event::{HandleEvent, NopEventHandler};
 
 mod config;
 pub mod event;
@@ -65,7 +62,7 @@ pub mod event;
 #[cfg(test)]
 mod test;
 
-static CONNECTION_ID: AtomicUsize = ATOMIC_USIZE_INIT;
+static CONNECTION_ID: AtomicUsize = AtomicUsize::new(0);
 
 /// A trait which provides connection-specific functionality.
 pub trait ManageConnection: Send + Sync + 'static {
@@ -368,8 +365,8 @@ where
         };
 
         let shared = Arc::new(SharedPool {
-            config: config,
-            manager: manager,
+            config,
+            manager,
             internals: Mutex::new(internals),
             cond: Condvar::new(),
         });
@@ -500,7 +497,7 @@ where
             drop_conns(&self.0, internals, vec![conn]);
         } else {
             let conn = IdleConn {
-                conn: conn,
+                conn,
                 idle_start: Instant::now(),
             };
             internals.conns.push(conn);
