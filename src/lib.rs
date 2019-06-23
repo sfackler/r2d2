@@ -55,9 +55,11 @@ pub use crate::config::Builder;
 use crate::config::Config;
 use crate::event::{AcquireEvent, CheckinEvent, CheckoutEvent, ReleaseEvent, TimeoutEvent};
 pub use crate::event::{HandleEvent, NopEventHandler};
+pub use crate::extensions::Extensions;
 
 mod config;
 pub mod event;
+mod extensions;
 
 #[cfg(test)]
 mod test;
@@ -153,6 +155,7 @@ impl<C, E> CustomizeConnection<C, E> for NopConnectionCustomizer {}
 
 struct Conn<C> {
     conn: C,
+    extensions: Extensions,
     birth: Instant,
     id: u64,
 }
@@ -255,6 +258,7 @@ where
                     let conn = IdleConn {
                         conn: Conn {
                             conn,
+                            extensions: Extensions::new(),
                             birth: now,
                             id,
                         },
@@ -630,5 +634,20 @@ where
 {
     fn deref_mut(&mut self) -> &mut M::Connection {
         &mut self.conn.as_mut().unwrap().conn
+    }
+}
+
+impl<M> PooledConnection<M>
+where
+    M: ManageConnection,
+{
+    /// Returns a shared reference to the extensions associated with this connection.
+    pub fn extensions(this: &Self) -> &Extensions {
+        &this.conn.as_ref().unwrap().extensions
+    }
+
+    /// Returns a mutable reference to the extensions associated with this connection.
+    pub fn extensions_mut(this: &mut Self) -> &mut Extensions {
+        &mut this.conn.as_mut().unwrap().extensions
     }
 }
