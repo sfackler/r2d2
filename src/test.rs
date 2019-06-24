@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use std::{error, fmt, mem, thread};
 
 use crate::event::{AcquireEvent, CheckinEvent, CheckoutEvent, ReleaseEvent, TimeoutEvent};
-use crate::{CustomizeConnection, HandleEvent, ManageConnection, Pool};
+use crate::{CustomizeConnection, HandleEvent, ManageConnection, Pool, PooledConnection};
 
 #[derive(Debug)]
 pub struct Error;
@@ -705,4 +705,20 @@ fn events() {
         Event::Checkout(ref event) => assert_eq!(event.connection_id(), id2),
         _ => unreachable!(),
     }
+}
+
+#[test]
+fn extensions() {
+    let pool = Pool::builder().max_size(2).build(OkManager).unwrap();
+
+    let mut conn1 = pool.get().unwrap();
+    let mut conn2 = pool.get().unwrap();
+
+    PooledConnection::extensions_mut(&mut conn1).insert(1);
+    PooledConnection::extensions_mut(&mut conn2).insert(2);
+
+    drop(conn1);
+
+    let conn = pool.get().unwrap();
+    assert_eq!(PooledConnection::extensions(&conn).get::<i32>(), Some(&1));
 }
