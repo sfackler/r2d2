@@ -11,5 +11,5 @@ edition = "2018"
 
 [dependencies]
 log = "0.4"
-parking_lot = "0.8"
+parking_lot = "0.9"
 scheduled-thread-pool = "0.2"
