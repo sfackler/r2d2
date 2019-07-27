@@ -1,92 +1,48 @@
-//! A generic connection pool.
-//!
-//! Opening a new database connection every time one is needed is both
-//! inefficient and can lead to resource exhaustion under high traffic
-//! conditions. A connection pool maintains a set of open connections to a
-//! database, handing them out for repeated use.
-//!
-//! r2d2 is agnostic to the connection type it is managing. Implementors of the
-//! `ManageConnection` trait provide the database-specific logic to create and
-//! check the health of connections.
-//!
-//! # Example
-//!
-//! Using an imaginary "foodb" database.
-//!
-//! ```rust,ignore
-//! use std::thread;
-//!
-//! extern crate r2d2;
-//! extern crate r2d2_foodb;
-//!
-//! fn main() {
-//!     let manager = r2d2_foodb::FooConnectionManager::new("localhost:1234");
-//!     let pool = r2d2::Pool::builder()
-//!         .max_size(15)
-//!         .build(manager)
-//!         .unwrap();
-//!
-//!     for _ in 0..20 {
-//!         let pool = pool.clone();
-//!         thread::spawn(move || {
-//!             let conn = pool.get().unwrap();
-//!             // use the connection
-//!             // it will be returned to the pool when it falls out of scope.
-//!         })
-//!     }
-//! }
-//! ```
-#![warn(missing_docs)]
-#![doc(html_root_url = "https://docs.rs/r2d2/0.8")]
-#![cfg_attr(feature = "async", feature(async_await))]
-
-use log::error;
-
-use parking_lot::{Condvar, Mutex, MutexGuard};
+use parking_lot::{Mutex, MutexGuard};
 use std::cmp;
+use std::collections::VecDeque;
 use std::error;
 use std::fmt;
 use std::mem;
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-#[cfg(feature = "async")]
-pub use crate::async_::{AsyncBuilder, AsyncCustomizeConnection, AsyncManageConnection, AsyncPool};
-pub use crate::config::Builder;
-use crate::config::Config;
+use futures::channel::oneshot;
+use futures::future::BoxFuture;
+use futures::prelude::*;
+use futures::task::SpawnExt;
+use futures_timer::{Delay, FutureExt as _, Interval};
+
+pub use self::config::{AsyncBuilder, AsyncConfig};
 use crate::event::{AcquireEvent, CheckinEvent, CheckoutEvent, ReleaseEvent, TimeoutEvent};
-pub use crate::event::{HandleEvent, NopEventHandler};
-pub use crate::extensions::Extensions;
+use crate::extensions::Extensions;
+use crate::{Error, NopConnectionCustomizer, State, CONNECTION_ID};
 
-#[cfg(feature = "async")]
-mod async_;
 mod config;
-pub mod event;
-mod extensions;
-
 #[cfg(test)]
 mod test;
 
-static CONNECTION_ID: AtomicUsize = AtomicUsize::new(0);
-
 /// A trait which provides connection-specific functionality.
-pub trait ManageConnection: Send + Sync + 'static {
+pub trait AsyncManageConnection: Send + Sync + 'static {
     /// The connection type this manager deals with.
     type Connection: Send + 'static;
 
     /// The error type returned by `Connection`s.
-    type Error: error::Error + 'static;
+    type Error: error::Error + Send + 'static;
 
     /// Attempts to create a new connection.
-    fn connect(&self) -> Result<Self::Connection, Self::Error>;
+    fn connect(&self) -> BoxFuture<'_, Result<Self::Connection, Self::Error>>;
 
     /// Determines if the connection is still connected to the database.
     ///
     /// A standard implementation would check if a simple query like `SELECT 1`
     /// succeeds.
-    fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error>;
+    fn is_valid<'a>(
+        &'a self,
+        conn: &'a mut Self::Connection,
+    ) -> BoxFuture<'a, Result<(), Self::Error>>;
 
     /// *Quickly* determines if the connection is no longer usable.
     ///
@@ -100,35 +56,11 @@ pub trait ManageConnection: Send + Sync + 'static {
     fn has_broken(&self, conn: &mut Self::Connection) -> bool;
 }
 
-/// A trait which handles errors reported by the `ManageConnection`.
-pub trait HandleError<E>: fmt::Debug + Send + Sync + 'static {
-    /// Handles an error.
-    fn handle_error(&self, error: E);
-}
-
-/// A `HandleError` implementation which does nothing.
-#[derive(Copy, Clone, Debug)]
-pub struct NopErrorHandler;
-
-impl<E> HandleError<E> for NopErrorHandler {
-    fn handle_error(&self, _: E) {}
-}
-
-/// A `HandleError` implementation which logs at the error level.
-#[derive(Copy, Clone, Debug)]
-pub struct LoggingErrorHandler;
-
-impl<E> HandleError<E> for LoggingErrorHandler
-where
-    E: error::Error,
-{
-    fn handle_error(&self, error: E) {
-        error!("{}", error);
-    }
-}
-
 /// A trait which allows for customization of connections.
-pub trait CustomizeConnection<C, E>: fmt::Debug + Send + Sync + 'static {
+pub trait AsyncCustomizeConnection<C, E>: fmt::Debug + Send + Sync + 'static
+where
+    E: Send + 'static,
+{
     /// Called with connections immediately after they are returned from
     /// `ManageConnection::connect`.
     ///
@@ -138,8 +70,8 @@ pub trait CustomizeConnection<C, E>: fmt::Debug + Send + Sync + 'static {
     ///
     /// If this method returns an error, the connection will be discarded.
     #[allow(unused_variables)]
-    fn on_acquire(&self, conn: &mut C) -> Result<(), E> {
-        Ok(())
+    fn on_acquire<'a>(&'a self, conn: &'a mut C) -> BoxFuture<'a, Result<(), E>> {
+        async move { Ok(()) }.boxed()
     }
 
     /// Called with connections when they are removed from the pool.
@@ -152,11 +84,7 @@ pub trait CustomizeConnection<C, E>: fmt::Debug + Send + Sync + 'static {
     fn on_release(&self, conn: C) {}
 }
 
-/// A `CustomizeConnection` which does nothing.
-#[derive(Copy, Clone, Debug)]
-pub struct NopConnectionCustomizer;
-
-impl<C, E> CustomizeConnection<C, E> for NopConnectionCustomizer {}
+impl<C, E> AsyncCustomizeConnection<C, E> for NopConnectionCustomizer where E: Send + 'static {}
 
 struct Conn<C> {
     conn: C,
@@ -170,29 +98,80 @@ struct IdleConn<C> {
     idle_start: Instant,
 }
 
-struct PoolInternals<C> {
-    conns: Vec<IdleConn<C>>,
+struct PoolInternals<M>
+where
+    M: AsyncManageConnection,
+{
+    conns: Vec<IdleConn<M::Connection>>,
     num_conns: u32,
     pending_conns: u32,
     last_error: Option<String>,
+    waiters: VecDeque<oneshot::Sender<CancellableConn<M>>>,
 }
 
 struct SharedPool<M>
 where
-    M: ManageConnection,
+    M: AsyncManageConnection,
 {
-    config: Config<M::Connection, M::Error>,
+    config: AsyncConfig<M::Connection, M::Error>,
     manager: M,
-    internals: Mutex<PoolInternals<M::Connection>>,
-    cond: Condvar,
+    internals: Mutex<PoolInternals<M>>,
+}
+
+fn put_conn<M>(
+    shared: &Arc<SharedPool<M>>,
+    internals: MutexGuard<PoolInternals<M>>,
+    mut conn: IdleConn<M::Connection>,
+) where
+    M: AsyncManageConnection,
+{
+    let mut internals = internals;
+    loop {
+        let send = if let Some(send) = internals.waiters.pop_front() {
+            send
+        } else {
+            internals.conns.push(conn);
+            return;
+        };
+        drop(internals);
+
+        let res = send.send(CancellableConn {
+            conn: Some(conn),
+            shared: shared.clone(),
+        });
+        conn = if let Err(conn) = res {
+            conn.into_inner()
+        } else {
+            return;
+        };
+
+        internals = shared.internals.lock();
+    }
+}
+
+fn wait_conn<M>(
+    mut internals: MutexGuard<PoolInternals<M>>,
+    end: Instant,
+) -> impl Future<Output = Result<CancellableConn<M>, std::io::Error>> + Send
+where
+    M: AsyncManageConnection,
+{
+    let (send, recv) = oneshot::channel();
+    internals.waiters.push_back(send);
+    drop(internals);
+    async move {
+        recv.map_err(|_| -> std::io::Error { panic!("cancel must not happen") })
+            .timeout_at(end)
+            .await
+    }
 }
 
 fn drop_conns<M>(
     shared: &Arc<SharedPool<M>>,
-    mut internals: MutexGuard<PoolInternals<M::Connection>>,
+    mut internals: MutexGuard<PoolInternals<M>>,
     conns: Vec<Conn<M::Connection>>,
 ) where
-    M: ManageConnection,
+    M: AsyncManageConnection,
 {
     internals.num_conns -= conns.len() as u32;
     establish_idle_connections(shared, &mut internals);
@@ -208,11 +187,9 @@ fn drop_conns<M>(
     }
 }
 
-fn establish_idle_connections<M>(
-    shared: &Arc<SharedPool<M>>,
-    internals: &mut PoolInternals<M::Connection>,
-) where
-    M: ManageConnection,
+fn establish_idle_connections<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<M>)
+where
+    M: AsyncManageConnection,
 {
     let min = shared.config.min_idle.unwrap_or(shared.config.max_size);
     let idle = internals.conns.len() as u32;
@@ -221,9 +198,9 @@ fn establish_idle_connections<M>(
     }
 }
 
-fn add_connection<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<M::Connection>)
+fn add_connection<M>(shared: &Arc<SharedPool<M>>, internals: &mut PoolInternals<M>)
 where
-    M: ManageConnection,
+    M: AsyncManageConnection,
 {
     if internals.num_conns + internals.pending_conns >= shared.config.max_size {
         return;
@@ -234,22 +211,25 @@ where
 
     fn inner<M>(delay: Duration, shared: &Arc<SharedPool<M>>)
     where
-        M: ManageConnection,
+        M: AsyncManageConnection,
     {
         let new_shared = Arc::downgrade(shared);
-        shared.config.thread_pool.execute_after(delay, move || {
+        let timer = shared.config.timer.clone().unwrap_or_else(Default::default);
+        let at = Instant::now() + delay;
+        SpawnExt::spawn(&mut (&*shared.config.spawn), async move {
+            Delay::new_handle(at, timer).await.expect("timer failed");
             let shared = match new_shared.upgrade() {
                 Some(shared) => shared,
                 None => return,
             };
 
-            let conn = shared.manager.connect().and_then(|mut conn| {
-                shared
-                    .config
-                    .connection_customizer
-                    .on_acquire(&mut conn)
-                    .map(|_| conn)
-            });
+            let mut conn = shared.manager.connect().await;
+            if let Ok(conn_) = &mut conn {
+                let res = shared.config.connection_customizer.on_acquire(conn_).await;
+                if let Err(e) = res {
+                    conn = Err(e);
+                }
+            }
             match conn {
                 Ok(conn) => {
                     let id = CONNECTION_ID.fetch_add(1, Ordering::Relaxed) as u64;
@@ -269,10 +249,9 @@ where
                         },
                         idle_start: now,
                     };
-                    internals.conns.push(conn);
                     internals.pending_conns -= 1;
                     internals.num_conns += 1;
-                    shared.cond.notify_one();
+                    put_conn(&shared, internals, conn);
                 }
                 Err(err) => {
                     shared.internals.lock().last_error = Some(err.to_string());
@@ -282,13 +261,14 @@ where
                     inner(delay, &shared);
                 }
             }
-        });
+        })
+        .expect("Failed to spawn");
     }
 }
 
 fn reap_connections<M>(shared: &Weak<SharedPool<M>>)
 where
-    M: ManageConnection,
+    M: AsyncManageConnection,
 {
     let shared = match shared.upgrade() {
         Some(shared) => shared,
@@ -319,26 +299,26 @@ where
 }
 
 /// A generic connection pool.
-pub struct Pool<M>(Arc<SharedPool<M>>)
+pub struct AsyncPool<M>(Arc<SharedPool<M>>)
 where
-    M: ManageConnection;
+    M: AsyncManageConnection;
 
 /// Returns a new `Pool` referencing the same state as `self`.
-impl<M> Clone for Pool<M>
+impl<M> Clone for AsyncPool<M>
 where
-    M: ManageConnection,
+    M: AsyncManageConnection,
 {
-    fn clone(&self) -> Pool<M> {
-        Pool(self.0.clone())
+    fn clone(&self) -> AsyncPool<M> {
+        AsyncPool(self.0.clone())
     }
 }
 
-impl<M> fmt::Debug for Pool<M>
+impl<M> fmt::Debug for AsyncPool<M>
 where
-    M: ManageConnection + fmt::Debug,
+    M: AsyncManageConnection + fmt::Debug,
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_struct("Pool")
+        fmt.debug_struct("AsyncPool")
             .field("state", &self.state())
             .field("config", &self.0.config)
             .field("manager", &self.0.manager)
@@ -346,61 +326,71 @@ where
     }
 }
 
-impl<M> Pool<M>
+impl<M> AsyncPool<M>
 where
-    M: ManageConnection,
+    M: AsyncManageConnection,
 {
     /// Creates a new connection pool with a default configuration.
-    pub fn new(manager: M) -> Result<Pool<M>, Error> {
-        Pool::builder().build(manager)
+    pub fn new(manager: M) -> impl Future<Output = Result<AsyncPool<M>, Error>> + Send {
+        async move { AsyncPool::builder().build(manager).await }
     }
 
     /// Returns a builder type to configure a new pool.
-    pub fn builder() -> Builder<M> {
-        Builder::new()
+    pub fn builder() -> AsyncBuilder<M> {
+        AsyncBuilder::new()
     }
 
     // for testing
     fn new_inner(
-        config: Config<M::Connection, M::Error>,
+        config: AsyncConfig<M::Connection, M::Error>,
         manager: M,
         reaper_rate: Duration,
-    ) -> Pool<M> {
+    ) -> AsyncPool<M> {
         let internals = PoolInternals {
             conns: Vec::with_capacity(config.max_size as usize),
             num_conns: 0,
             pending_conns: 0,
             last_error: None,
+            waiters: VecDeque::new(),
         };
 
         let shared = Arc::new(SharedPool {
             config,
             manager,
             internals: Mutex::new(internals),
-            cond: Condvar::new(),
         });
 
         establish_idle_connections(&shared, &mut shared.internals.lock());
 
         if shared.config.max_lifetime.is_some() || shared.config.idle_timeout.is_some() {
             let s = Arc::downgrade(&shared);
-            shared
-                .config
-                .thread_pool
-                .execute_at_fixed_rate(reaper_rate, reaper_rate, move || reap_connections(&s));
+            SpawnExt::spawn(&mut (&*shared.config.spawn), async move {
+                let mut interval = Interval::new(reaper_rate);
+                while let Some(_) = interval.next().await {
+                    reap_connections(&s);
+                }
+            })
+            .expect("spawn failed");
         }
 
-        Pool(shared)
+        AsyncPool(shared)
     }
 
-    fn wait_for_initialization(&self) -> Result<(), Error> {
+    async fn wait_for_initialization(&self) -> Result<(), Error> {
         let end = Instant::now() + self.0.config.connection_timeout;
-        let mut internals = self.0.internals.lock();
 
         let initial_size = self.0.config.min_idle.unwrap_or(self.0.config.max_size);
 
-        while internals.num_conns != initial_size {
-            if self.0.cond.wait_until(&mut internals, end).timed_out() {
+        loop {
+            let fut = {
+                let internals = self.0.internals.lock();
+                if internals.num_conns == initial_size {
+                    break;
+                }
+                wait_conn(internals, end)
+            };
+            if let Err(_) = fut.await {
+                let mut internals = self.0.internals.lock();
                 return Err(Error(internals.last_error.take()));
             }
         }
@@ -412,39 +402,47 @@ where
     ///
     /// Waits for at most the configured connection timeout before returning an
     /// error.
-    pub fn get(&self) -> Result<PooledConnection<M>, Error> {
-        self.get_timeout(self.0.config.connection_timeout)
+    pub fn get(&self) -> impl Future<Output = Result<AsyncPooledConnection<M>, Error>> + Send + '_ {
+        async move { self.get_timeout(self.0.config.connection_timeout).await }
     }
 
     /// Retrieves a connection from the pool, waiting for at most `timeout`
     ///
     /// The given timeout will be used instead of the configured connection
     /// timeout.
-    pub fn get_timeout(&self, timeout: Duration) -> Result<PooledConnection<M>, Error> {
-        let start = Instant::now();
-        let end = start + timeout;
-        let mut internals = self.0.internals.lock();
-
-        loop {
-            match self.try_get_inner(internals) {
-                Ok(conn) => {
-                    let event = CheckoutEvent {
-                        id: conn.conn.as_ref().unwrap().id,
-                        duration: start.elapsed(),
+    pub fn get_timeout(
+        &self,
+        timeout: Duration,
+    ) -> impl Future<Output = Result<AsyncPooledConnection<M>, Error>> + Send + '_ {
+        async move {
+            let start = Instant::now();
+            let end = start + timeout;
+            loop {
+                let fut = {
+                    let mut internals = match self.try_get_inner().await {
+                        Ok(conn) => {
+                            let event = CheckoutEvent {
+                                id: conn.conn.as_ref().unwrap().id,
+                                duration: start.elapsed(),
+                            };
+                            self.0.config.event_handler.handle_checkout(event);
+                            return Ok(conn);
+                        }
+                        Err(i) => i,
                     };
-                    self.0.config.event_handler.handle_checkout(event);
-                    return Ok(conn);
+
+                    add_connection(&self.0, &mut internals);
+
+                    wait_conn(internals, end)
+                };
+
+                if let Err(_) = fut.await {
+                    let mut internals = self.0.internals.lock();
+                    let event = TimeoutEvent { timeout };
+                    self.0.config.event_handler.handle_timeout(event);
+
+                    return Err(Error(internals.last_error.take()));
                 }
-                Err(i) => internals = i,
-            }
-
-            add_connection(&self.0, &mut internals);
-
-            if self.0.cond.wait_until(&mut internals, end).timed_out() {
-                let event = TimeoutEvent { timeout };
-                self.0.config.event_handler.handle_timeout(event);
-
-                return Err(Error(internals.last_error.take()));
             }
         }
     }
@@ -454,37 +452,44 @@ where
     ///
     /// Returns `None` if there are no idle connections available in the pool.
     /// This method will not block waiting to establish a new connection.
-    pub fn try_get(&self) -> Option<PooledConnection<M>> {
-        self.try_get_inner(self.0.internals.lock()).ok()
+    pub fn try_get(&self) -> impl Future<Output = Option<AsyncPooledConnection<M>>> + Send + '_ {
+        async move { self.try_get_inner().await.ok() }
     }
 
-    fn try_get_inner<'a>(
+    async fn try_get_inner<'a>(
         &'a self,
-        mut internals: MutexGuard<'a, PoolInternals<M::Connection>>,
-    ) -> Result<PooledConnection<M>, MutexGuard<'a, PoolInternals<M::Connection>>> {
+    ) -> Result<AsyncPooledConnection<M>, MutexGuard<'a, PoolInternals<M>>> {
         loop {
-            if let Some(mut conn) = internals.conns.pop() {
+            let mut conn = self.try_get_inner_notest()?;
+            if self.0.config.test_on_check_out {
+                if let Err(e) = self.0.manager.is_valid(&mut conn.conn).await {
+                    let msg = e.to_string();
+                    self.0.config.error_handler.handle_error(e);
+                    let mut internals = self.0.internals.lock();
+                    internals.last_error = Some(msg);
+                    drop_conns(&self.0, internals, vec![conn]);
+                    continue;
+                }
+            }
+
+            return Ok(AsyncPooledConnection {
+                pool: self.clone(),
+                checkout: Instant::now(),
+                conn: Some(conn),
+            });
+        }
+    }
+
+    fn try_get_inner_notest(
+        &self,
+    ) -> Result<Conn<M::Connection>, MutexGuard<'_, PoolInternals<M>>> {
+        loop {
+            let mut internals = self.0.internals.lock();
+            if let Some(conn) = internals.conns.pop() {
                 establish_idle_connections(&self.0, &mut internals);
                 drop(internals);
 
-                if self.0.config.test_on_check_out {
-                    if let Err(e) = self.0.manager.is_valid(&mut conn.conn.conn) {
-                        let msg = e.to_string();
-                        self.0.config.error_handler.handle_error(e);
-                        // FIXME we shouldn't have to lock, unlock, and relock here
-                        internals = self.0.internals.lock();
-                        internals.last_error = Some(msg);
-                        drop_conns(&self.0, internals, vec![conn.conn]);
-                        internals = self.0.internals.lock();
-                        continue;
-                    }
-                }
-
-                return Ok(PooledConnection {
-                    pool: self.clone(),
-                    checkout: Instant::now(),
-                    conn: Some(conn.conn),
-                });
+                return Ok(conn.conn);
             } else {
                 return Err(internals);
             }
@@ -501,7 +506,7 @@ where
         // This is specified to be fast, but call it before locking anyways
         let broken = self.0.manager.has_broken(&mut conn.conn);
 
-        let mut internals = self.0.internals.lock();
+        let internals = self.0.internals.lock();
         if broken {
             drop_conns(&self.0, internals, vec![conn]);
         } else {
@@ -509,8 +514,7 @@ where
                 conn,
                 idle_start: Instant::now(),
             };
-            internals.conns.push(conn);
-            self.0.cond.notify_one();
+            put_conn(&self.0, internals, conn);
         }
     }
 
@@ -555,57 +559,48 @@ where
     }
 }
 
-/// The error type returned by methods in this crate.
-#[derive(Debug)]
-pub struct Error(Option<String>);
+struct CancellableConn<M>
+where
+    M: AsyncManageConnection,
+{
+    shared: Arc<SharedPool<M>>,
+    conn: Option<IdleConn<M::Connection>>,
+}
 
-impl fmt::Display for Error {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.write_str(error::Error::description(self))?;
-        if let Some(ref err) = self.0 {
-            write!(fmt, ": {}", err)?;
+impl<M> CancellableConn<M>
+where
+    M: AsyncManageConnection,
+{
+    fn into_inner(mut self) -> IdleConn<M::Connection> {
+        self.conn.take().unwrap()
+    }
+}
+
+impl<M> Drop for CancellableConn<M>
+where
+    M: AsyncManageConnection,
+{
+    fn drop(&mut self) {
+        if let Some(conn) = self.conn.take() {
+            let internals = self.shared.internals.lock();
+            put_conn(&self.shared, internals, conn);
         }
-        Ok(())
-    }
-}
-
-impl error::Error for Error {
-    fn description(&self) -> &str {
-        "timed out waiting for connection"
-    }
-}
-
-/// Information about the state of a `Pool`.
-pub struct State {
-    /// The number of connections currently being managed by the pool.
-    pub connections: u32,
-    /// The number of idle connections.
-    pub idle_connections: u32,
-    _p: (),
-}
-
-impl fmt::Debug for State {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_struct("State")
-            .field("connections", &self.connections)
-            .field("idle_connections", &self.idle_connections)
-            .finish()
     }
 }
 
 /// A smart pointer wrapping a connection.
-pub struct PooledConnection<M>
+pub struct AsyncPooledConnection<M>
 where
-    M: ManageConnection,
+    M: AsyncManageConnection,
 {
-    pool: Pool<M>,
+    pool: AsyncPool<M>,
     checkout: Instant,
     conn: Option<Conn<M::Connection>>,
 }
 
-impl<M> fmt::Debug for PooledConnection<M>
+impl<M> fmt::Debug for AsyncPooledConnection<M>
 where
-    M: ManageConnection,
+    M: AsyncManageConnection,
     M::Connection: fmt::Debug,
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
@@ -613,18 +608,18 @@ where
     }
 }
 
-impl<M> Drop for PooledConnection<M>
+impl<M> Drop for AsyncPooledConnection<M>
 where
-    M: ManageConnection,
+    M: AsyncManageConnection,
 {
     fn drop(&mut self) {
         self.pool.put_back(self.checkout, self.conn.take().unwrap());
     }
 }
 
-impl<M> Deref for PooledConnection<M>
+impl<M> Deref for AsyncPooledConnection<M>
 where
-    M: ManageConnection,
+    M: AsyncManageConnection,
 {
     type Target = M::Connection;
 
@@ -633,18 +628,18 @@ where
     }
 }
 
-impl<M> DerefMut for PooledConnection<M>
+impl<M> DerefMut for AsyncPooledConnection<M>
 where
-    M: ManageConnection,
+    M: AsyncManageConnection,
 {
     fn deref_mut(&mut self) -> &mut M::Connection {
         &mut self.conn.as_mut().unwrap().conn
     }
 }
 
-impl<M> PooledConnection<M>
+impl<M> AsyncPooledConnection<M>
 where
-    M: ManageConnection,
+    M: AsyncManageConnection,
 {
     /// Returns a shared reference to the extensions associated with this connection.
     pub fn extensions(this: &Self) -> &Extensions {
