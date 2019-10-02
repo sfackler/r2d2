@@ -29,6 +29,7 @@ Backend                                                                | Adaptor
 [mongodb](https://github.com/mongodb-labs/mongo-rust-driver-prototype) | [r2d2-mongodb](https://gitlab.com/petoknm/r2d2-mongodb)
 [odbc](https://github.com/Koka/odbc-rs)                                | [r2d2-odbc](https://github.com/Koka/r2d2-odbc)
 [jfs](https://github.com/flosse/rust-json-file-store)                  | [r2d2-jfs](https://github.com/flosse/r2d2-jfs)
+[oracle](https://github.com/kubo/rust-oracle)                          | [r2d2-oracle](https://github.com/rursprung/r2d2-oracle)
 
 # Example
 
