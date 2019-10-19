@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.8.6] - 2019-10-19
+
+## Added
+
+* Added the ability to associate arbitrary data with pooled connections.
+
+## [0.8.5] - 2019-06-06
+
+## Changed
+
+* Upgraded `parking_lot`.
+
 ## [0.8.4] - 2019-04-01
 
 ### Added
@@ -96,7 +108,9 @@
 
 Look at the [release tags] for information about older releases.
 
-[Unreleased]: https://github.com/sfackler/r2d2/compare/v0.8.4...HEAD
+[Unreleased]: https://github.com/sfackler/r2d2/compare/v0.8.6...HEAD
+[0.8.6]: https://github.com/sfackler/r2d2/compare/v0.8.5...v0.8.6
+[0.8.5]: https://github.com/sfackler/r2d2/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/sfackler/r2d2/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/sfackler/r2d2/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/sfackler/r2d2/compare/v0.8.1...v0.8.2
