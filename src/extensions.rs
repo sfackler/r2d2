@@ -7,7 +7,7 @@ use std::collections::HashMap;
 /// can be used to, for example, cache prepared statements along side their
 /// connection.
 #[derive(Default)]
-pub struct Extensions(HashMap<TypeId, Box<Any + Sync + Send>>);
+pub struct Extensions(HashMap<TypeId, Box<dyn Any + Sync + Send>>);
 
 impl Extensions {
     /// Returns a new, empty `Extensions`.
@@ -25,7 +25,7 @@ impl Extensions {
     {
         self.0
             .insert(TypeId::of::<T>(), Box::new(value))
-            .and_then(|v| Box::<Any + 'static>::downcast(v).ok())
+            .and_then(|v| Box::<dyn Any + 'static>::downcast(v).ok())
             .map(|v| *v)
     }
 
@@ -56,7 +56,7 @@ impl Extensions {
     {
         self.0
             .remove(&TypeId::of::<T>())
-            .and_then(|v| Box::<Any + 'static>::downcast(v).ok())
+            .and_then(|v| Box::<dyn Any + 'static>::downcast(v).ok())
             .map(|v| *v)
     }
 
