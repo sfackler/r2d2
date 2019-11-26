@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.8.7] - 2019-11-25
+
+## Changed
+
+* Upgraded `parking_lot`.
+
 ## [0.8.6] - 2019-10-19
 
 ## Added
