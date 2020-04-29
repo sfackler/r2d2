@@ -176,6 +176,14 @@ where
         self
     }
 
+    /// Sets settings to never allow dropping connections. This is useful for in-memory (like
+    /// SQLite's ":memory:") databases.
+    ///
+    /// Is equivalent to calling `max_size(1)`, `idle_timeout(None)` and `max_lifetime(None)`.
+    pub fn always_keep_alive(mut self) -> Builder<M> {
+        self.max_size(1).idle_timeout(None).max_lifetime(None)
+    }
+
     /// Sets the handler for errors reported in the pool.
     ///
     /// Defaults to the `LoggingErrorHandler`.
