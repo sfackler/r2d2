@@ -48,7 +48,7 @@ use std::fmt;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub use crate::config::Builder;
@@ -281,15 +281,10 @@ where
     }
 }
 
-fn reap_connections<M>(shared: &Weak<SharedPool<M>>)
+fn reap_connections<M>(shared: &Arc<SharedPool<M>>, reap_all: bool)
 where
     M: ManageConnection,
 {
-    let shared = match shared.upgrade() {
-        Some(shared) => shared,
-        None => return,
-    };
-
     let mut old = Vec::with_capacity(shared.config.max_size as usize);
     let mut to_drop = vec![];
 
@@ -297,7 +292,7 @@ where
     mem::swap(&mut old, &mut internals.conns);
     let now = Instant::now();
     for conn in old {
-        let mut reap = false;
+        let mut reap = reap_all;
         if let Some(timeout) = shared.config.idle_timeout {
             reap |= now - conn.idle_start >= timeout;
         }
@@ -382,7 +377,11 @@ where
             shared
                 .config
                 .thread_pool
-                .execute_at_fixed_rate(reaper_rate, reaper_rate, move || reap_connections(&s));
+                .execute_at_fixed_rate(reaper_rate, reaper_rate, move || {
+                    if let Some(shared) = s.upgrade() {
+                        reap_connections(&shared, false);
+                    }
+                });
         }
 
         Pool(shared)
@@ -547,6 +546,15 @@ where
     /// Returns the configured connection timeout.
     pub fn connection_timeout(&self) -> Duration {
         self.0.config.connection_timeout
+    }
+}
+
+impl<M> Drop for Pool<M>
+where
+    M: ManageConnection,
+{
+    fn drop(&mut self) {
+        reap_connections(&self.0, true);
     }
 }
 
