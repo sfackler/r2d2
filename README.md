@@ -26,7 +26,7 @@ Backend                                                                | Adaptor
 [rusted-cypher](https://github.com/livioribeiro/rusted-cypher)         | [r2d2-cypher](https://github.com/flosse/r2d2-cypher)
 [diesel](https://github.com/sgrif/diesel)                              | [diesel::r2d2](https://github.com/diesel-rs/diesel/blob/master/diesel/src/r2d2.rs) ([docs](https://docs.diesel.rs/diesel/r2d2/))
 [couchdb](https://github.com/chill-rs/chill)                           | [r2d2-couchdb](https://github.com/scorphus/r2d2-couchdb)
-[mongodb](https://github.com/mongodb-labs/mongo-rust-driver-prototype) | [r2d2-mongodb](https://gitlab.com/petoknm/r2d2-mongodb)
+[mongodb (archived)](https://github.com/mongodb-labs/mongo-rust-driver-prototype)<br>use official [mongodb](https://github.com/mongodb/mongo-rust-driver) driver instead                             | [r2d2-mongodb](https://gitlab.com/petoknm/r2d2-mongodb)<br>(deprecated: official driver handles pooling internally)
 [odbc](https://github.com/Koka/odbc-rs)                                | [r2d2-odbc](https://github.com/Koka/r2d2-odbc)
 [jfs](https://github.com/flosse/rust-json-file-store)                  | [r2d2-jfs](https://github.com/flosse/r2d2-jfs)
 [oracle](https://github.com/kubo/rust-oracle)                          | [r2d2-oracle](https://github.com/rursprung/r2d2-oracle)
