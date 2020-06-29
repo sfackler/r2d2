@@ -19,7 +19,7 @@ A (possibly not exhaustive) list of adaptors for different backends:
 Backend                                                                | Adaptor Crate
 ---------------------------------------------------------------------- | -------------
 [rust-postgres](https://github.com/sfackler/rust-postgres)             | [r2d2-postgres](https://github.com/sfackler/r2d2-postgres)
-[redis-rs](https://github.com/mitsuhiko/redis-rs)                      | [r2d2-redis](https://github.com/nevdelap/r2d2-redis)
+[redis-rs](https://github.com/mitsuhiko/redis-rs)                      | use `r2d2` feature of [redis-rs](https://github.com/mitsuhiko/redis-rs)
 [rust-memcache](https://github.com/aisk/rust-memcache)                 | [r2d2-memcache](https://github.com/megumish/r2d2-memcache)
 [rust-mysql-simple](https://github.com/blackbeam/rust-mysql-simple)    | [r2d2-mysql](https://github.com/outersky/r2d2-mysql)
 [rusqlite](https://github.com/jgallagher/rusqlite)                     | [r2d2-sqlite](https://github.com/ivanceras/r2d2-sqlite)
