@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.8.9] - 2020-06-30
+
+## Changed
+
+* Upgraded `parking_lot`.
+
 ## [0.8.7] - 2019-11-25
 
 ## Changed
@@ -114,7 +120,9 @@
 
 Look at the [release tags] for information about older releases.
 
-[Unreleased]: https://github.com/sfackler/r2d2/compare/v0.8.6...HEAD
+[Unreleased]: https://github.com/sfackler/r2d2/compare/v0.8.9...HEAD
+[0.8.9]: https://github.com/sfackler/r2d2/compare/v0.8.8...v0.8.9
+[0.8.7]: https://github.com/sfackler/r2d2/compare/v0.8.6...v0.8.7
 [0.8.6]: https://github.com/sfackler/r2d2/compare/v0.8.5...v0.8.6
 [0.8.5]: https://github.com/sfackler/r2d2/compare/v0.8.4...v0.8.5
 [0.8.4]: https://github.com/sfackler/r2d2/compare/v0.8.3...v0.8.4
