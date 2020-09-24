@@ -1,5 +1,6 @@
 # r2d2
 [![CircleCI](https://circleci.com/gh/sfackler/r2d2.svg?style=shield)](https://circleci.com/gh/sfackler/r2d2)
+[![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
 
 A generic connection pool for Rust.
 

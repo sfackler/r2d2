@@ -38,6 +38,7 @@
 //! ```
 #![warn(missing_docs)]
 #![doc(html_root_url = "https://docs.rs/r2d2/0.8")]
+#![forbid(unsafe_code)]
 
 use log::error;
 
