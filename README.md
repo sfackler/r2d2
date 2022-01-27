@@ -32,6 +32,7 @@ Backend                                                                | Adaptor
 [jfs](https://github.com/flosse/rust-json-file-store)                  | [r2d2-jfs](https://github.com/flosse/r2d2-jfs)
 [oracle](https://github.com/kubo/rust-oracle)                          | [r2d2-oracle](https://github.com/rursprung/r2d2-oracle)
 [ldap3](https://github.com/inejge/ldap3)                               | [r2d2-ldap](https://github.com/c0dearm/r2d2-ldap)
+[duckdb-rs](https://github.com/wangfenjin/duckdb-rs)                   | use `r2d2` feature of [duckdb-rs](https://github.com/wangfenjin/duckdb-rs)
 
 # Example
 
