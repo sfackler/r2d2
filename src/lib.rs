@@ -524,7 +524,7 @@ where
         self.0.config.max_size
     }
 
-    /// Returns the configured mimimum idle connection count.
+    /// Returns the configured minimum idle connection count.
     pub fn min_idle(&self) -> Option<u32> {
         self.0.config.min_idle
     }
