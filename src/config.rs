@@ -136,7 +136,11 @@ where
     ///
     /// Panics if `max_lifetime` is the zero `Duration`.
     pub fn max_lifetime(mut self, max_lifetime: Option<Duration>) -> Builder<M> {
-        assert_ne!(max_lifetime, Some(Duration::from_secs(0)), "max_lifetime must be positive");
+        assert_ne!(
+            max_lifetime,
+            Some(Duration::from_secs(0)),
+            "max_lifetime must be positive"
+        );
         self.max_lifetime = max_lifetime;
         self
     }
@@ -152,7 +156,11 @@ where
     ///
     /// Panics if `idle_timeout` is the zero `Duration`.
     pub fn idle_timeout(mut self, idle_timeout: Option<Duration>) -> Builder<M> {
-        assert_ne!(idle_timeout, Some(Duration::from_secs(0)), "idle_timeout must be positive");
+        assert_ne!(
+            idle_timeout,
+            Some(Duration::from_secs(0)),
+            "idle_timeout must be positive"
+        );
         self.idle_timeout = idle_timeout;
         self
     }

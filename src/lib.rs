@@ -515,7 +515,6 @@ where
         State {
             connections: internals.num_conns,
             idle_connections: internals.conns.len() as u32,
-            _p: (),
         }
     }
 
@@ -556,7 +555,7 @@ pub struct Error(Option<String>);
 
 impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.write_str(error::Error::description(self))?;
+        fmt.write_str("timed out waiting for connection")?;
         if let Some(ref err) = self.0 {
             write!(fmt, ": {}", err)?;
         }
@@ -564,28 +563,16 @@ impl fmt::Display for Error {
     }
 }
 
-impl error::Error for Error {
-    fn description(&self) -> &str {
-        "timed out waiting for connection"
-    }
-}
+impl error::Error for Error {}
 
 /// Information about the state of a `Pool`.
+#[non_exhaustive]
+#[derive(Debug)]
 pub struct State {
     /// The number of connections currently being managed by the pool.
     pub connections: u32,
     /// The number of idle connections.
     pub idle_connections: u32,
-    _p: (),
-}
-
-impl fmt::Debug for State {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_struct("State")
-            .field("connections", &self.connections)
-            .field("idle_connections", &self.idle_connections)
-            .finish()
-    }
 }
 
 /// A smart pointer wrapping a connection.
