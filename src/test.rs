@@ -164,7 +164,11 @@ fn test_issue_2_unlocked_during_is_valid() {
         }
 
         fn is_valid(&self, _: &mut FakeConnection) -> Result<(), Error> {
-            if self.first.compare_and_swap(true, false, Ordering::SeqCst) {
+            if self
+                .first
+                .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+                .unwrap_or_else(|e| e)
+            {
                 self.s.lock().send(()).unwrap();
                 self.r.lock().recv().unwrap();
             }
