@@ -313,6 +313,39 @@ where
     drop_conns(&shared, internals, to_drop);
 }
 
+fn put_back_connection<M>(
+    pool: &Weak<SharedPool<M>>,
+    checkout: Instant,
+    mut conn: Conn<M::Connection>,
+) where
+    M: ManageConnection,
+{
+    let pool = match pool.upgrade() {
+        Some(pool) => pool,
+        None => return,
+    };
+    let event = CheckinEvent {
+        id: conn.id,
+        duration: checkout.elapsed(),
+    };
+    pool.config.event_handler.handle_checkin(event);
+
+    // This is specified to be fast, but call it before locking anyways
+    let broken = pool.manager.has_broken(&mut conn.conn);
+
+    let mut internals = pool.internals.lock();
+    if broken {
+        drop_conns(&pool, internals, vec![conn]);
+    } else {
+        let conn = IdleConn {
+            conn,
+            idle_start: Instant::now(),
+        };
+        internals.conns.push(conn);
+        pool.cond.notify_one();
+    }
+}
+
 /// A generic connection pool.
 pub struct Pool<M>(Arc<SharedPool<M>>)
 where
@@ -476,36 +509,13 @@ where
                 }
 
                 return Ok(PooledConnection {
-                    pool: self.clone(),
+                    pool: Arc::downgrade(&self.0),
                     checkout: Instant::now(),
                     conn: Some(conn.conn),
                 });
             } else {
                 return Err(internals);
             }
-        }
-    }
-
-    fn put_back(&self, checkout: Instant, mut conn: Conn<M::Connection>) {
-        let event = CheckinEvent {
-            id: conn.id,
-            duration: checkout.elapsed(),
-        };
-        self.0.config.event_handler.handle_checkin(event);
-
-        // This is specified to be fast, but call it before locking anyways
-        let broken = self.0.manager.has_broken(&mut conn.conn);
-
-        let mut internals = self.0.internals.lock();
-        if broken {
-            drop_conns(&self.0, internals, vec![conn]);
-        } else {
-            let conn = IdleConn {
-                conn,
-                idle_start: Instant::now(),
-            };
-            internals.conns.push(conn);
-            self.0.cond.notify_one();
         }
     }
 
@@ -580,7 +590,7 @@ pub struct PooledConnection<M>
 where
     M: ManageConnection,
 {
-    pool: Pool<M>,
+    pool: Weak<SharedPool<M>>,
     checkout: Instant,
     conn: Option<Conn<M::Connection>>,
 }
@@ -600,7 +610,7 @@ where
     M: ManageConnection,
 {
     fn drop(&mut self) {
-        self.pool.put_back(self.checkout, self.conn.take().unwrap());
+        put_back_connection(&self.pool, self.checkout, self.conn.take().unwrap());
     }
 }
 
