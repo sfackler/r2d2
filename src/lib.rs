@@ -41,7 +41,6 @@
 
 use log::error;
 
-use parking_lot::{Condvar, Mutex, MutexGuard};
 use std::cmp;
 use std::error;
 use std::fmt;
@@ -63,6 +62,103 @@ mod extensions;
 
 #[cfg(test)]
 mod test;
+
+#[cfg(feature = "parking_lot")]
+mod parking_lot_mutex {
+    pub(crate) use parking_lot::{MutexGuard, WaitTimeoutResult};
+    use std::time::{Duration, Instant};
+
+    pub(crate) struct Mutex<T>(parking_lot::Mutex<T>);
+
+    impl<T> Mutex<T> {
+        #[inline]
+        pub fn new(t: T) -> Self {
+            Self(parking_lot::Mutex::new(t))
+        }
+
+        #[inline]
+        pub fn lock(&self) -> MutexGuard<T> {
+            self.0.lock()
+        }
+    }
+
+    pub(crate) struct Condvar(parking_lot::Condvar);
+
+    impl Condvar {
+        #[inline]
+        pub fn new() -> Self {
+            Self(parking_lot::Condvar::new())
+        }
+
+        #[inline]
+        pub fn notify_one(&self) {
+            self.0.notify_one();
+        }
+
+        #[inline]
+        pub fn wait_until<'a, T>(
+            &self,
+            mut mutex_guard: MutexGuard<'a, T>,
+            timeout: Duration,
+        ) -> (MutexGuard<'a, T>, WaitTimeoutResult) {
+            let end = Instant::now() + timeout;
+
+            let wait_result = self.0.wait_until(&mut mutex_guard, end);
+
+            (mutex_guard, wait_result)
+        }
+    }
+}
+#[cfg(feature = "parking_lot")]
+use parking_lot_mutex::*;
+
+#[cfg(not(feature = "parking_lot"))]
+mod std_mutex {
+    use std::sync::PoisonError;
+    pub(crate) use std::sync::{MutexGuard, WaitTimeoutResult};
+    use std::time::Duration;
+
+    pub(crate) struct Mutex<T>(std::sync::Mutex<T>);
+
+    impl<T> Mutex<T> {
+        #[inline]
+        pub fn new(t: T) -> Self {
+            Self(std::sync::Mutex::new(t))
+        }
+
+        #[inline]
+        pub fn lock(&self) -> MutexGuard<T> {
+            self.0.lock().unwrap_or_else(PoisonError::into_inner)
+        }
+    }
+
+    pub(crate) struct Condvar(std::sync::Condvar);
+
+    impl Condvar {
+        #[inline]
+        pub fn new() -> Self {
+            Self(std::sync::Condvar::new())
+        }
+
+        #[inline]
+        pub fn notify_one(&self) {
+            self.0.notify_one()
+        }
+
+        #[inline]
+        pub fn wait_until<'a, T>(
+            &self,
+            mutex_guard: MutexGuard<'a, T>,
+            timeout: Duration,
+        ) -> (MutexGuard<'a, T>, WaitTimeoutResult) {
+            self.0
+                .wait_timeout(mutex_guard, timeout)
+                .unwrap_or_else(PoisonError::into_inner)
+        }
+    }
+}
+#[cfg(not(feature = "parking_lot"))]
+use std_mutex::*;
 
 static CONNECTION_ID: AtomicUsize = AtomicUsize::new(0);
 
@@ -389,13 +485,18 @@ where
     }
 
     fn wait_for_initialization(&self) -> Result<(), Error> {
-        let end = Instant::now() + self.0.config.connection_timeout;
         let mut internals = self.0.internals.lock();
 
         let initial_size = self.0.config.min_idle.unwrap_or(self.0.config.max_size);
 
         while internals.num_conns != initial_size {
-            if self.0.cond.wait_until(&mut internals, end).timed_out() {
+            let ret = self
+                .0
+                .cond
+                .wait_until(internals, self.0.config.connection_timeout);
+            internals = ret.0;
+
+            if ret.1.timed_out() {
                 return Err(Error(internals.last_error.take()));
             }
         }
@@ -417,7 +518,6 @@ where
     /// timeout.
     pub fn get_timeout(&self, timeout: Duration) -> Result<PooledConnection<M>, Error> {
         let start = Instant::now();
-        let end = start + timeout;
         let mut internals = self.0.internals.lock();
 
         loop {
@@ -435,7 +535,10 @@ where
 
             add_connection(&self.0, &mut internals);
 
-            if self.0.cond.wait_until(&mut internals, end).timed_out() {
+            let ret = self.0.cond.wait_until(internals, timeout);
+            internals = ret.0;
+
+            if ret.1.timed_out() {
                 let event = TimeoutEvent { timeout };
                 self.0.config.event_handler.handle_timeout(event);
 
