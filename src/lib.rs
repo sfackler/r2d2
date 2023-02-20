@@ -114,9 +114,8 @@ use parking_lot_mutex::*;
 
 #[cfg(not(feature = "parking_lot"))]
 mod std_mutex {
-    use std::sync::PoisonError;
     pub(crate) use std::sync::{MutexGuard, WaitTimeoutResult};
-    use std::time::Duration;
+    use std::{sync::PoisonError, time::Duration};
 
     pub(crate) struct Mutex<T>(std::sync::Mutex<T>);
 
