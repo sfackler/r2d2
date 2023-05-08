@@ -255,7 +255,12 @@ where
 
         let thread_pool = match self.thread_pool {
             Some(thread_pool) => thread_pool,
-            None => Arc::new(ScheduledThreadPool::with_name("r2d2-worker-{}", 3)),
+            None => Arc::new(
+                ScheduledThreadPool::builder()
+                    .num_threads(3)
+                    .thread_name_pattern("r2d2-worker-{}")
+                    .build(),
+            ),
         };
 
         let config = Config {
