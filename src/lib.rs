@@ -390,18 +390,16 @@ where
     }
 
     fn wait_for_initialization(&self) -> Result<(), Error> {
+        let end = Instant::now() + self.0.config.connection_timeout;
         let mut internals = self.0.internals.lock();
 
         let initial_size = self.0.config.min_idle.unwrap_or(self.0.config.max_size);
 
         while internals.num_conns != initial_size {
-            let ret = self
-                .0
-                .cond
-                .wait_until(internals, self.0.config.connection_timeout);
-            internals = ret.0;
+            let (guard, result) = self.0.cond.wait_until(internals, end);
+            internals = guard;
 
-            if ret.1.timed_out() {
+            if result.timed_out() {
                 return Err(Error(internals.last_error.take()));
             }
         }
@@ -423,6 +421,7 @@ where
     /// timeout.
     pub fn get_timeout(&self, timeout: Duration) -> Result<PooledConnection<M>, Error> {
         let start = Instant::now();
+        let end = start + timeout;
         let mut internals = self.0.internals.lock();
 
         loop {
@@ -440,10 +439,10 @@ where
 
             add_connection(&self.0, &mut internals);
 
-            let ret = self.0.cond.wait_until(internals, timeout);
-            internals = ret.0;
+            let (guard, result) = self.0.cond.wait_until(internals, end);
+            internals = guard;
 
-            if ret.1.timed_out() {
+            if result.timed_out() {
                 let event = TimeoutEvent { timeout };
                 self.0.config.event_handler.handle_timeout(event);
 

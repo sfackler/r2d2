@@ -1,7 +1,7 @@
 #[cfg(feature = "parking_lot")]
 mod parking_lot_mutex {
     pub(crate) use parking_lot::{MutexGuard, WaitTimeoutResult};
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     pub(crate) struct Mutex<T>(parking_lot::Mutex<T>);
 
@@ -34,11 +34,9 @@ mod parking_lot_mutex {
         pub fn wait_until<'a, T>(
             &self,
             mut mutex_guard: MutexGuard<'a, T>,
-            timeout: Duration,
+            timeout: Instant,
         ) -> (MutexGuard<'a, T>, WaitTimeoutResult) {
-            let end = Instant::now() + timeout;
-
-            let wait_result = self.0.wait_until(&mut mutex_guard, end);
+            let wait_result = self.0.wait_until(&mut mutex_guard, timeout);
 
             (mutex_guard, wait_result)
         }
@@ -50,7 +48,7 @@ pub(crate) use parking_lot_mutex::*;
 #[cfg(not(feature = "parking_lot"))]
 mod std_mutex {
     pub(crate) use std::sync::{MutexGuard, WaitTimeoutResult};
-    use std::{sync::PoisonError, time::Duration};
+    use std::{sync::PoisonError, time::Instant};
 
     pub(crate) struct Mutex<T>(std::sync::Mutex<T>);
 
@@ -83,8 +81,12 @@ mod std_mutex {
         pub fn wait_until<'a, T>(
             &self,
             mutex_guard: MutexGuard<'a, T>,
-            timeout: Duration,
+            timeout: Instant,
         ) -> (MutexGuard<'a, T>, WaitTimeoutResult) {
+            let timeout = timeout
+                .checked_duration_since(Instant::now())
+                .unwrap_or_default();
+
             self.0
                 .wait_timeout(mutex_guard, timeout)
                 .unwrap_or_else(PoisonError::into_inner)
