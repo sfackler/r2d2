@@ -41,7 +41,6 @@
 
 use log::error;
 
-use parking_lot::{Condvar, Mutex, MutexGuard};
 use std::cmp;
 use std::error;
 use std::fmt;
@@ -56,10 +55,12 @@ use crate::config::Config;
 use crate::event::{AcquireEvent, CheckinEvent, CheckoutEvent, ReleaseEvent, TimeoutEvent};
 pub use crate::event::{HandleEvent, NopEventHandler};
 pub use crate::extensions::Extensions;
+use crate::sync::*;
 
 mod config;
 pub mod event;
 mod extensions;
+mod sync;
 
 #[cfg(test)]
 mod test;
@@ -395,7 +396,10 @@ where
         let initial_size = self.0.config.min_idle.unwrap_or(self.0.config.max_size);
 
         while internals.num_conns != initial_size {
-            if self.0.cond.wait_until(&mut internals, end).timed_out() {
+            let (guard, result) = self.0.cond.wait_until(internals, end);
+            internals = guard;
+
+            if result.timed_out() {
                 return Err(Error(internals.last_error.take()));
             }
         }
@@ -435,7 +439,10 @@ where
 
             add_connection(&self.0, &mut internals);
 
-            if self.0.cond.wait_until(&mut internals, end).timed_out() {
+            let (guard, result) = self.0.cond.wait_until(internals, end);
+            internals = guard;
+
+            if result.timed_out() {
                 let event = TimeoutEvent { timeout };
                 self.0.config.event_handler.handle_timeout(event);
 

@@ -9,7 +9,10 @@ readme = "README.md"
 keywords = ["database", "pool"]
 edition = "2018"
 
+[features]
+default = ["parking_lot"]
+
 [dependencies]
 log = "0.4"
-parking_lot = "0.12"
+parking_lot = { version = "0.12", optional = true }
 scheduled-thread-pool = "0.2"
