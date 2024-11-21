@@ -145,6 +145,37 @@ pub trait CustomizeConnection<C, E>: fmt::Debug + Send + Sync + 'static {
     /// The default implementation does nothing.
     #[allow(unused_variables)]
     fn on_release(&self, conn: C) {}
+
+    /// Called with connections immediately after they are checked out from
+    /// the connection pool for later usage.
+    ///
+    /// This method can be used to customize the behaviour of `ConnectionManager::is_valid`
+    /// for specific usages like testing or other manual preperations.
+    ///
+    /// The default implementations simply returns the existing `is_valid_result`
+    ///
+    /// # Errors
+    ///
+    /// If this method returns an error, the connection will be discarded
+    #[allow(unused_variables)]
+    fn on_checkout(&self, conn: &mut C, is_valid_result: Result<(), E>) -> Result<(), E> {
+        is_valid_result
+    }
+
+    /// Called with connections immediately before they are released to the connection
+    /// pool
+    ///
+    /// This method can be used to customize the behaviour of `ConnectionManager::has_broken`
+    /// for specific usages like testing or manual cleanup.
+    ///
+    /// The default implementation simply returns the existing `has_broken` values
+    ///
+    /// If this methods returns true, the connection will be discarded instead of returned
+    /// to the connection pool.
+    #[allow(unused_variables)]
+    fn on_checkin(&self, conn: &mut C, has_broken: bool) -> bool {
+        has_broken
+    }
 }
 
 /// A `CustomizeConnection` which does nothing.
@@ -463,7 +494,14 @@ where
                 drop(internals);
 
                 if self.0.config.test_on_check_out {
-                    if let Err(e) = self.0.manager.is_valid(&mut conn.conn.conn) {
+                    let is_valid_result = self.0.manager.is_valid(&mut conn.conn.conn);
+
+                    if let Err(e) = self
+                        .0
+                        .config
+                        .connection_customizer
+                        .on_checkout(&mut conn.conn.conn, is_valid_result)
+                    {
                         let msg = e.to_string();
                         self.0.config.error_handler.handle_error(e);
                         // FIXME we shouldn't have to lock, unlock, and relock here
@@ -495,6 +533,11 @@ where
 
         // This is specified to be fast, but call it before locking anyways
         let broken = self.0.manager.has_broken(&mut conn.conn);
+        let broken = self
+            .0
+            .config
+            .connection_customizer
+            .on_checkin(&mut conn.conn, broken);
 
         let mut internals = self.0.internals.lock();
         if broken {
