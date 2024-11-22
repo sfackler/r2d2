@@ -99,6 +99,10 @@ pub trait ManageConnection: Send + Sync + 'static {
 pub trait HandleError<E>: fmt::Debug + Send + Sync + 'static {
     /// Handles an error.
     fn handle_error(&self, error: E);
+
+    fn can_retry(&self, _error: &E, _num_retries: u32) -> bool {
+        return true;
+    }
 }
 
 /// A `HandleError` implementation which does nothing.
@@ -225,9 +229,9 @@ where
     }
 
     internals.pending_conns += 1;
-    inner(Duration::from_secs(0), shared);
+    inner(Duration::from_secs(0), shared, 0);
 
-    fn inner<M>(delay: Duration, shared: &Arc<SharedPool<M>>)
+    fn inner<M>(delay: Duration, shared: &Arc<SharedPool<M>>, num_retries: u32)
     where
         M: ManageConnection,
     {
@@ -270,11 +274,19 @@ where
                     shared.cond.notify_one();
                 }
                 Err(err) => {
-                    shared.internals.lock().last_error = Some(err.to_string());
-                    shared.config.error_handler.handle_error(err);
-                    let delay = cmp::max(Duration::from_millis(200), delay);
-                    let delay = cmp::min(shared.config.connection_timeout / 2, delay * 2);
-                    inner(delay, &shared);
+                    if shared.config.error_handler.can_retry(&err, 0) {
+                        shared.internals.lock().last_error = Some(err.to_string());
+                        shared.config.error_handler.handle_error(err);
+                        let delay = cmp::max(Duration::from_millis(200), delay);
+                        let delay = cmp::min(shared.config.connection_timeout / 2, delay * 2);
+                        inner(delay, &shared, num_retries + 1);
+                    } else {
+                        let mut internals = shared.internals.lock();
+                        internals.last_error = Some(err.to_string());
+                        internals.pending_conns -= 1;
+                        shared.config.error_handler.handle_error(err);
+                        shared.cond.notify_one();
+                    }
                 }
             }
         });
@@ -439,6 +451,8 @@ where
                 let event = TimeoutEvent { timeout };
                 self.0.config.event_handler.handle_timeout(event);
 
+                return Err(Error(internals.last_error.take()));
+            } else if internals.last_error.is_some() {
                 return Err(Error(internals.last_error.take()));
             }
         }
