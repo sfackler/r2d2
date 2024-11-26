@@ -550,7 +550,7 @@ where
 }
 
 /// The error type returned by methods in this crate.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Error(Option<String>);
 
 impl fmt::Display for Error {
