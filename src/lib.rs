@@ -600,7 +600,9 @@ where
     M: ManageConnection,
 {
     fn drop(&mut self) {
-        self.pool.put_back(self.checkout, self.conn.take().unwrap());
+        if let Some(conn) = self.conn.take() {
+            self.pool.put_back(self.checkout, conn);
+        }
     }
 }
 
@@ -636,5 +638,10 @@ where
     /// Returns a mutable reference to the extensions associated with this connection.
     pub fn extensions_mut(this: &mut Self) -> &mut Extensions {
         &mut this.conn.as_mut().unwrap().extensions
+    }
+
+    /// detach a connection not puting back into pool
+    pub fn detach(mut self) -> Option<M::Connection> {
+        self.conn.take().map(|x| x.conn)
     }
 }
